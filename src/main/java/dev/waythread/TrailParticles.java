@@ -2,6 +2,7 @@ package dev.waythread;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.Minecraft;
@@ -10,26 +11,38 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.TranslatableEnum;
 import org.joml.Vector3f;
 
 final class TrailParticles {
     private static final double THREAD_HEIGHT = 0.15;
-    private static final double DOT_SPACING = 0.25;
     private static final double PULSE_LENGTH = 8.0;
     private final List<Particle> visible = new ArrayList<>();
+    private Style style = Style.DUST;
+    private Density density = Density.STANDARD;
     private String trailColor;
     private String anchorColor;
+    private Vector3f trailTint;
     private DustParticleOptions threadDust;
     private DustParticleOptions anchorDust;
     private Vector3f pulseColor;
 
+    void updateAppearance(Style style, Density density) {
+        if (style != this.style || density != this.density) {
+            clear();
+            this.style = style;
+            this.density = density;
+        }
+    }
+
     void updateColors(String trailColor, String anchorColor) {
         if (!trailColor.equals(this.trailColor)) {
             this.trailColor = trailColor;
-            Vector3f color = parseColor(trailColor);
-            threadDust = new DustParticleOptions(color, 0.72F);
-            pulseColor = new Vector3f(color).lerp(new Vector3f(1, 1, 1), 0.55F);
+            trailTint = parseColor(trailColor);
+            threadDust = new DustParticleOptions(trailTint, 0.72F);
+            pulseColor = new Vector3f(trailTint).lerp(new Vector3f(1, 1, 1), 0.55F);
         }
         if (!anchorColor.equals(this.anchorColor)) {
             this.anchorColor = anchorColor;
@@ -44,23 +57,35 @@ final class TrailParticles {
 
     void thread(List<Vec3> points, Vec3 player, double rangeSquared, int limit,
             Set<BlockPos> drawn, boolean returning) {
+        ParticleOptions type = switch (style) {
+            case DUST -> threadDust;
+            case SPARK -> ParticleTypes.ELECTRIC_SPARK;
+            case GLOW -> ParticleTypes.GLOW;
+            case MIST -> ParticleTypes.WHITE_SMOKE;
+        };
         int lifetime = returning ? 7 : 11;
         for (int i = points.size() - 1; i >= 0 && drawn.size() < limit; i--) {
             Vec3 point = points.get(i);
-            dot(point, player, rangeSquared, drawn, lifetime);
+            dot(type, point, player, rangeSquared, drawn, lifetime);
             if (i > 0) {
                 Vec3 previous = points.get(i - 1);
-                int steps = (int) Math.ceil(point.distanceTo(previous) / DOT_SPACING);
+                int steps = (int) Math.ceil(point.distanceTo(previous) / density.spacing);
                 for (int step = 1; step < steps && drawn.size() < limit; step++) {
-                    dot(point.lerp(previous, (double) step / steps), player, rangeSquared, drawn, lifetime);
+                    dot(type, point.lerp(previous, (double) step / steps), player, rangeSquared, drawn, lifetime);
                 }
             }
         }
     }
 
-    private void dot(Vec3 point, Vec3 player, double rangeSquared, Set<BlockPos> drawn, int lifetime) {
-        if (point.distanceToSqr(player) <= rangeSquared && drawn.add(BlockPos.containing(point.scale(5)))) {
-            spawn(threadDust, point.add(0, THREAD_HEIGHT, 0), lifetime);
+    private void dot(ParticleOptions type, Vec3 point, Vec3 player, double rangeSquared, Set<BlockPos> drawn, int lifetime) {
+        if (point.distanceToSqr(player) <= rangeSquared
+                && drawn.add(BlockPos.containing(point.x * density.gridScale, point.y * density.gridScale,
+                        point.z * density.gridScale))) {
+            Particle effect = spawn(type, point.add(0, THREAD_HEIGHT, 0), lifetime);
+            if (effect != null && style != Style.DUST) {
+                effect.setColor(trailTint.x, trailTint.y, trailTint.z);
+                effect.scale(style.scale);
+            }
         }
     }
 
@@ -157,5 +182,43 @@ final class TrailParticles {
     void clear() {
         visible.forEach(Particle::remove);
         visible.clear();
+    }
+
+    enum Style implements TranslatableEnum {
+        DUST(1.0F), SPARK(0.62F), GLOW(0.55F), MIST(0.45F);
+
+        private final float scale;
+
+        Style(float scale) {
+            this.scale = scale;
+        }
+
+        @Override
+        public Component getTranslatedName() {
+            return Component.translatable("waythread.configuration.particleStyle." + name().toLowerCase(Locale.ROOT));
+        }
+    }
+
+    enum Density implements TranslatableEnum {
+        LOW(0.50, 3, 0.5), STANDARD(0.25, 5, 1.0), HIGH(0.15, 8, 1.6);
+
+        private final double spacing;
+        private final int gridScale;
+        private final double budgetScale;
+
+        Density(double spacing, int gridScale, double budgetScale) {
+            this.spacing = spacing;
+            this.gridScale = gridScale;
+            this.budgetScale = budgetScale;
+        }
+
+        int particleLimit(int loadDistance) {
+            return (int) Math.round(Math.max(128, loadDistance * 9) * budgetScale);
+        }
+
+        @Override
+        public Component getTranslatedName() {
+            return Component.translatable("waythread.configuration.particleDensity." + name().toLowerCase(Locale.ROOT));
+        }
     }
 }

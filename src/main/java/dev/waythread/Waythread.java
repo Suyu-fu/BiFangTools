@@ -141,9 +141,11 @@ public final class Waythread {
         particles.updateColors(WaythreadConfig.TRAIL_COLOR.get(), WaythreadConfig.ANCHOR_COLOR.get());
         List<Vec3> tail = mode == Mode.RECORDING ? trail.recordingTail() : trail.current();
         if (refresh) {
+            TrailParticles.Density density = WaythreadConfig.PARTICLE_DENSITY.get();
+            particles.updateAppearance(WaythreadConfig.PARTICLE_STYLE.get(), density);
             int cacheDistance = loadDistance + CACHE_MARGIN;
             localRoutes.keySet().removeIf(segment -> !segment.isNear(position, cacheDistance * cacheDistance));
-            showTrail(tail, position, rangeSquared, Math.max(128, loadDistance * 9));
+            showTrail(tail, position, rangeSquared, density.particleLimit(loadDistance));
         }
         if (showDirection) {
             particles.pulse(trail, tail, localRoutes, position, rangeSquared, player.tickCount, returning);

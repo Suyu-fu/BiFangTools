@@ -6,7 +6,7 @@ Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 
 ## 安装
 
-将 `build/libs/bifangs-bag-of-curiosities-0.5.0.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
+将 `build/libs/bifangs-bag-of-curiosities-0.5.1.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
 
 ## 引路丝（Waythread）
 
@@ -28,9 +28,11 @@ Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
 | `loadDistance` | 18 格 | 在玩家周围多远开始生成并显示路段粒子。可设 4–64 格。 |
-| `recordPointSpacing` | 5 格 | 沿实际轨迹累计移动多远后记录下一个位置。可设 0.1–5.0 格，已有配置保留原值。 |
+| `recordPointSpacing` | 5 格 | 沿实际轨迹累计移动多远后记录下一个位置。可设 2–10 格，旧配置超出范围时自动调整到最近的边界。 |
 | `maxRecordedPoints` | 20,000 点 | 起点计入，路段共用的端点只计一次。达到上限时暂停新增记录并提示一次。可设 2–200,000 点。调低上限时保留当前路线，直到返程消点或手动清除。 |
 | `returnEraseDistance` | 2 格 | 返程时匹配这个距离内最近的记录点，截去它之后的路线。匹配到起点时结束返程。可设 0.5–6 格。 |
+| `particleStyle` | 细尘 | 路线粒子可选细尘（`DUST`）、电火花（`SPARK`）、荧光（`GLOW`）和薄雾（`MIST`）。 |
+| `particleDensity` | 标准 | 路线粒子密度可选低（`LOW`）、标准（`STANDARD`）和高（`HIGH`）。 |
 | `trailColor` | `#38E3FF` | 路线与方向亮点的颜色，使用 `#RRGGBB` 格式。 |
 | `anchorColor` | `#FFB036` | 起点标记的颜色，使用 `#RRGGBB` 格式。 |
 | `showRecordingDirection` | 开启 | 记路时显示朝路线末端移动的亮点。 |
