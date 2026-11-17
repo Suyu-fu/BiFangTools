@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
+import net.minecraft.client.particle.SimpleAnimatedParticle;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
@@ -20,18 +21,21 @@ final class TrailParticles {
     private static final double THREAD_HEIGHT = 0.15;
     private static final double PULSE_LENGTH = 8.0;
     private final List<Particle> visible = new ArrayList<>();
+    private DisplayMode displayMode = DisplayMode.LINE;
     private Style style = Style.DUST;
     private Density density = Density.STANDARD;
     private String trailColor;
     private String anchorColor;
-    private Vector3f trailTint;
+    private int trailRgb;
+    private int anchorRgb;
     private DustParticleOptions threadDust;
     private DustParticleOptions anchorDust;
     private Vector3f pulseColor;
 
-    void updateAppearance(Style style, Density density) {
-        if (style != this.style || density != this.density) {
+    void updateAppearance(DisplayMode displayMode, Style style, Density density) {
+        if (displayMode != this.displayMode || style != this.style || density != this.density) {
             clear();
+            this.displayMode = displayMode;
             this.style = style;
             this.density = density;
         }
@@ -40,34 +44,30 @@ final class TrailParticles {
     void updateColors(String trailColor, String anchorColor) {
         if (!trailColor.equals(this.trailColor)) {
             this.trailColor = trailColor;
-            trailTint = parseColor(trailColor);
-            threadDust = new DustParticleOptions(trailTint, 0.72F);
-            pulseColor = new Vector3f(trailTint).lerp(new Vector3f(1, 1, 1), 0.55F);
+            trailRgb = Integer.parseInt(trailColor, 1, trailColor.length(), 16);
+            Vector3f tint = colorVector(trailRgb);
+            threadDust = new DustParticleOptions(tint, 0.72F);
+            pulseColor = new Vector3f(tint).lerp(new Vector3f(1, 1, 1), 0.55F);
         }
         if (!anchorColor.equals(this.anchorColor)) {
             this.anchorColor = anchorColor;
-            anchorDust = new DustParticleOptions(parseColor(anchorColor), 1.3F);
+            anchorRgb = Integer.parseInt(anchorColor, 1, anchorColor.length(), 16);
+            anchorDust = new DustParticleOptions(colorVector(anchorRgb), 1.3F);
         }
     }
 
-    private static Vector3f parseColor(String hex) {
-        int rgb = Integer.parseInt(hex.substring(1), 16);
+    private static Vector3f colorVector(int rgb) {
         return new Vector3f((rgb >> 16) / 255.0F, ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F);
     }
 
     void thread(List<Vec3> points, Vec3 player, double rangeSquared, int limit,
             Set<BlockPos> drawn, boolean returning) {
-        ParticleOptions type = switch (style) {
-            case DUST -> threadDust;
-            case SPARK -> ParticleTypes.ELECTRIC_SPARK;
-            case GLOW -> ParticleTypes.GLOW;
-            case MIST -> ParticleTypes.WHITE_SMOKE;
-        };
+        ParticleOptions type = style.options(threadDust);
         int lifetime = returning ? 7 : 11;
         for (int i = points.size() - 1; i >= 0 && drawn.size() < limit; i--) {
             Vec3 point = points.get(i);
             dot(type, point, player, rangeSquared, drawn, lifetime);
-            if (i > 0) {
+            if (i > 0 && displayMode == DisplayMode.LINE) {
                 Vec3 previous = points.get(i - 1);
                 int steps = (int) Math.ceil(point.distanceTo(previous) / density.spacing);
                 for (int step = 1; step < steps && drawn.size() < limit; step++) {
@@ -81,17 +81,14 @@ final class TrailParticles {
         if (point.distanceToSqr(player) <= rangeSquared
                 && drawn.add(BlockPos.containing(point.x * density.gridScale, point.y * density.gridScale,
                         point.z * density.gridScale))) {
-            Particle effect = spawn(type, point.add(0, THREAD_HEIGHT, 0), lifetime);
-            if (effect != null && style != Style.DUST) {
-                effect.setColor(trailTint.x, trailTint.y, trailTint.z);
-                effect.scale(style.scale);
-            }
+            spawnStyled(type, point.add(0, THREAD_HEIGHT, 0), lifetime, trailRgb, 1.0F);
         }
     }
 
     void anchor(Vec3 point) {
-        spawn(anchorDust, point.add(0, 0.24, 0), 11);
-        spawn(anchorDust, point.add(0, 0.60, 0), 11);
+        ParticleOptions type = style.options(anchorDust);
+        spawnStyled(type, point.add(0, 0.24, 0), 11, anchorRgb, 1.8F);
+        spawnStyled(type, point.add(0, 0.60, 0), 11, anchorRgb, 1.8F);
     }
 
     void pulse(BreadcrumbTrail trail, List<Vec3> tail, Map<BreadcrumbTrail.Segment, List<Vec3>> routes,
@@ -164,6 +161,17 @@ final class TrailParticles {
         return path;
     }
 
+    private void spawnStyled(ParticleOptions type, Vec3 point, int lifetime, int rgb, float scale) {
+        Particle effect = spawn(type, point, lifetime);
+        if (effect != null && style != Style.DUST) {
+            effect.setColor((rgb >> 16) / 255.0F, ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F);
+            effect.scale(style.scale * scale);
+            if (effect instanceof SimpleAnimatedParticle animated) {
+                animated.setFadeColor(rgb);
+            }
+        }
+    }
+
     private Particle spawn(ParticleOptions type, Vec3 point, int lifetime) {
         Particle effect = Minecraft.getInstance().particleEngine.createParticle(
                 type, point.x, point.y, point.z, 0, 0, 0);
@@ -185,7 +193,7 @@ final class TrailParticles {
     }
 
     enum Style implements TranslatableEnum {
-        DUST(1.0F), SPARK(0.62F), GLOW(0.55F), MIST(0.45F);
+        DUST(1.0F), SPARK(0.62F), GLOW(0.90F), MIST(0.45F);
 
         private final float scale;
 
@@ -193,9 +201,27 @@ final class TrailParticles {
             this.scale = scale;
         }
 
+        ParticleOptions options(DustParticleOptions dust) {
+            return switch (this) {
+                case DUST -> dust;
+                case SPARK -> ParticleTypes.ELECTRIC_SPARK;
+                case GLOW -> ParticleTypes.END_ROD;
+                case MIST -> ParticleTypes.WHITE_SMOKE;
+            };
+        }
+
         @Override
         public Component getTranslatedName() {
             return Component.translatable("waythread.configuration.particleStyle." + name().toLowerCase(Locale.ROOT));
+        }
+    }
+
+    enum DisplayMode implements TranslatableEnum {
+        LINE, WAYPOINTS;
+
+        @Override
+        public Component getTranslatedName() {
+            return Component.translatable("waythread.configuration.displayMode." + name().toLowerCase(Locale.ROOT));
         }
     }
 

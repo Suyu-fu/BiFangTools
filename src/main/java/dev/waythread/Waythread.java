@@ -119,7 +119,13 @@ public final class Waythread {
 
         int loadDistance = WaythreadConfig.LOAD_DISTANCE.get();
         double rangeSquared = loadDistance * loadDistance;
-        if (search != null) {
+        TrailParticles.DisplayMode displayMode = WaythreadConfig.DISPLAY_MODE.get();
+        boolean waypoints = displayMode == TrailParticles.DisplayMode.WAYPOINTS;
+        if (waypoints) {
+            searchedSegment = null;
+            search = null;
+            localRoutes.clear();
+        } else if (search != null) {
             if (!searchedSegment.isNear(position, rangeSquared)
                     || !trail.contains(searchedSegment)) {
                 search = null;
@@ -139,13 +145,15 @@ public final class Waythread {
             return;
         }
         particles.updateColors(WaythreadConfig.TRAIL_COLOR.get(), WaythreadConfig.ANCHOR_COLOR.get());
-        List<Vec3> tail = mode == Mode.RECORDING ? trail.recordingTail() : trail.current();
+        List<Vec3> tail = mode == Mode.RECORDING && !waypoints ? trail.recordingTail() : trail.current();
         if (refresh) {
-            TrailParticles.Density density = WaythreadConfig.PARTICLE_DENSITY.get();
-            particles.updateAppearance(WaythreadConfig.PARTICLE_STYLE.get(), density);
-            int cacheDistance = loadDistance + CACHE_MARGIN;
-            localRoutes.keySet().removeIf(segment -> !segment.isNear(position, cacheDistance * cacheDistance));
-            showTrail(tail, position, rangeSquared, density.particleLimit(loadDistance));
+            TrailParticles.Density density = waypoints ? TrailParticles.Density.LOW : WaythreadConfig.PARTICLE_DENSITY.get();
+            particles.updateAppearance(displayMode, WaythreadConfig.PARTICLE_STYLE.get(), density);
+            if (!waypoints) {
+                int cacheDistance = loadDistance + CACHE_MARGIN;
+                localRoutes.keySet().removeIf(segment -> !segment.isNear(position, cacheDistance * cacheDistance));
+            }
+            showTrail(tail, position, rangeSquared, density.particleLimit(loadDistance), waypoints);
         }
         if (showDirection) {
             particles.pulse(trail, tail, localRoutes, position, rangeSquared, player.tickCount, returning);
@@ -244,7 +252,7 @@ public final class Waythread {
         }
     }
 
-    private void showTrail(List<Vec3> tail, Vec3 position, double rangeSquared, int particleLimit) {
+    private void showTrail(List<Vec3> tail, Vec3 position, double rangeSquared, int particleLimit, boolean waypoints) {
         particles.prune();
         boolean returning = mode == Mode.RETURNING;
         Set<BlockPos> drawn = new HashSet<>();
@@ -252,16 +260,20 @@ public final class Waythread {
         List<BreadcrumbTrail.Segment> segments = trail.segments();
         for (int index = segments.size() - 1; index >= 0 && drawn.size() < particleLimit; index--) {
             BreadcrumbTrail.Segment segment = segments.get(index);
-            if (!segment.isNear(position, rangeSquared)) {
-                continue;
+            List<Vec3> points = segment.samples();
+            if (!waypoints) {
+                if (!segment.isNear(position, rangeSquared)) {
+                    continue;
+                }
+                List<Vec3> generated = localRoutes.get(segment);
+                if (generated != null) {
+                    points = generated;
+                } else if (search == null) {
+                    searchedSegment = segment;
+                    search = new RouteSearch(new WalkableTerrain(level), segment);
+                }
             }
-            List<Vec3> generated = localRoutes.get(segment);
-            if (generated == null && search == null) {
-                searchedSegment = segment;
-                search = new RouteSearch(new WalkableTerrain(level), segment);
-            }
-            particles.thread(generated == null ? segment.samples() : generated,
-                    position, rangeSquared, particleLimit, drawn, returning);
+            particles.thread(points, position, rangeSquared, particleLimit, drawn, returning);
         }
         Vec3 anchor = trail.anchor();
         if (anchor.distanceToSqr(position) <= rangeSquared) {

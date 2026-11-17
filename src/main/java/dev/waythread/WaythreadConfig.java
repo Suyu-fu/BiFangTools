@@ -13,6 +13,7 @@ final class WaythreadConfig {
     static final ModConfigSpec.DoubleValue RECORD_POINT_SPACING;
     static final ModConfigSpec.IntValue MAX_RECORDED_POINTS;
     static final ModConfigSpec.DoubleValue RETURN_ERASE_DISTANCE;
+    static final ModConfigSpec.EnumValue<TrailParticles.DisplayMode> DISPLAY_MODE;
     static final ModConfigSpec.EnumValue<TrailParticles.Style> PARTICLE_STYLE;
     static final ModConfigSpec.EnumValue<TrailParticles.Density> PARTICLE_DENSITY;
     static final ModConfigSpec.ConfigValue<String> TRAIL_COLOR;
@@ -39,12 +40,16 @@ final class WaythreadConfig {
                 .comment("Distance in blocks for matching a recorded point and reaching the start in return mode.")
                 .translation("waythread.configuration.returnEraseDistance")
                 .defineInRange("returnEraseDistance", 2.0, 0.5, 6.0);
+        DISPLAY_MODE = builder
+                .comment("Show a connected trail line or just the recorded waypoints.")
+                .translation("waythread.configuration.displayMode")
+                .defineEnum("displayMode", TrailParticles.DisplayMode.LINE);
         PARTICLE_STYLE = builder
-                .comment("Visual preset for the trail line.")
+                .comment("Visual preset for the trail line and start marker.")
                 .translation("waythread.configuration.particleStyle")
                 .defineEnum("particleStyle", TrailParticles.Style.DUST);
         PARTICLE_DENSITY = builder
-                .comment("Spacing and count of the particles that draw the trail line.")
+                .comment("Spacing and count of particles in Trail Line mode.")
                 .translation("waythread.configuration.particleDensity")
                 .defineEnum("particleDensity", TrailParticles.Density.STANDARD);
         TRAIL_COLOR = builder
