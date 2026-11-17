@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+
+group = 'dev.waythread'
+version = '0.4.5'
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = '21.1.266'
+
+    runs {
+        client { client() }
+    }
+
+    mods {
+        waythread { sourceSet sourceSets.main }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.processResources {
+    inputs.property('modVersion', project.version)
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand(modVersion: project.version)
+    }
+}
