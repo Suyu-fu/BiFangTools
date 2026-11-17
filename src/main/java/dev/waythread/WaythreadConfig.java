@@ -1,12 +1,20 @@
 package dev.waythread;
 
+import java.util.regex.Pattern;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 final class WaythreadConfig {
+    static final String DEFAULT_TRAIL_COLOR = "#38E3FF";
+    static final String DEFAULT_ANCHOR_COLOR = "#FFB036";
+    private static final Pattern RGB_COLOR = Pattern.compile("#[0-9a-fA-F]{6}");
+
     static final ModConfigSpec SPEC;
     static final ModConfigSpec.IntValue LOAD_DISTANCE;
     static final ModConfigSpec.DoubleValue RECORD_POINT_SPACING;
+    static final ModConfigSpec.IntValue MAX_RECORDED_POINTS;
     static final ModConfigSpec.DoubleValue RETURN_ERASE_DISTANCE;
+    static final ModConfigSpec.ConfigValue<String> TRAIL_COLOR;
+    static final ModConfigSpec.ConfigValue<String> ANCHOR_COLOR;
     static final ModConfigSpec.BooleanValue SHOW_RECORDING_DIRECTION;
     static final ModConfigSpec.BooleanValue SHOW_ARRIVAL_MESSAGE;
     static final ModConfigSpec.BooleanValue CLEAR_ON_ARRIVAL;
@@ -20,11 +28,23 @@ final class WaythreadConfig {
         RECORD_POINT_SPACING = builder
                 .comment("Travel distance in blocks before recording another position.")
                 .translation("waythread.configuration.recordPointSpacing")
-                .defineInRange("recordPointSpacing", 0.45, 0.1, 2.0);
+                .defineInRange("recordPointSpacing", 5.0, 0.1, 5.0);
+        MAX_RECORDED_POINTS = builder
+                .comment("Maximum number of recorded points, including the starting point.")
+                .translation("waythread.configuration.maxRecordedPoints")
+                .defineInRange("maxRecordedPoints", 20_000, 2, 200_000);
         RETURN_ERASE_DISTANCE = builder
-                .comment("Distance in blocks for erasing the next trail point and reaching the start in return mode.")
+                .comment("Distance in blocks for matching a recorded point and reaching the start in return mode.")
                 .translation("waythread.configuration.returnEraseDistance")
                 .defineInRange("returnEraseDistance", 2.0, 0.5, 6.0);
+        TRAIL_COLOR = builder
+                .comment("RGB color of the trail particles in #RRGGBB format.")
+                .translation("waythread.configuration.trailColor")
+                .define("trailColor", DEFAULT_TRAIL_COLOR, WaythreadConfig::isRgbColor);
+        ANCHOR_COLOR = builder
+                .comment("RGB color of the start marker particles in #RRGGBB format.")
+                .translation("waythread.configuration.anchorColor")
+                .define("anchorColor", DEFAULT_ANCHOR_COLOR, WaythreadConfig::isRgbColor);
         SHOW_RECORDING_DIRECTION = builder
                 .comment("Show a moving highlight toward the end of the trail while recording.")
                 .translation("waythread.configuration.showRecordingDirection")
@@ -41,5 +61,9 @@ final class WaythreadConfig {
     }
 
     private WaythreadConfig() {
+    }
+
+    private static boolean isRgbColor(Object value) {
+        return value instanceof String color && RGB_COLOR.matcher(color).matches();
     }
 }

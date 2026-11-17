@@ -75,10 +75,15 @@ final class RouteSearch {
     }
 
     private boolean withinTrack(Vec3 position) {
-        for (Vec3 sample : segment.samples()) {
-            double x = position.x - sample.x;
-            double z = position.z - sample.z;
-            if (x * x + z * z <= 1.25 * 1.25 && Math.abs(position.y - sample.y) <= 1.15) {
+        List<Vec3> samples = segment.samples();
+        for (int i = 1; i < samples.size(); i++) {
+            Vec3 from = samples.get(i - 1);
+            Vec3 to = samples.get(i);
+            double fraction = BreadcrumbTrail.closestFraction(position, from, to);
+            double x = position.x - (from.x + (to.x - from.x) * fraction);
+            double y = position.y - (from.y + (to.y - from.y) * fraction);
+            double z = position.z - (from.z + (to.z - from.z) * fraction);
+            if (x * x + z * z <= 1.25 * 1.25 && Math.abs(y) <= 1.15) {
                 return true;
             }
         }
