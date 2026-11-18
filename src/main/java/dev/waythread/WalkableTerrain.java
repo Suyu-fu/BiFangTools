@@ -95,6 +95,21 @@ final class WalkableTerrain {
                 && (crossing == to.y() || isClear(toCrossing.minmax(body(to, to.y()))));
     }
 
+    boolean canJoin(Vec3 from, Vec3 to) {
+        int checks = Math.max(1, (int) Math.ceil(from.distanceTo(to) * 4));
+        AABB previous = body(from, from.y);
+        for (int i = 0; i <= checks; i++) {
+            Vec3 position = from.lerp(to, (double) i / checks);
+            AABB body = body(position, position.y);
+            AABB feet = new AABB(body.minX, position.y - 0.35, body.minZ, body.maxX, position.y + EPSILON, body.maxZ);
+            if (!isClear(previous.minmax(body)) || !level.getBlockCollisions(null, feet).iterator().hasNext()) {
+                return false;
+            }
+            previous = body;
+        }
+        return true;
+    }
+
     private boolean isClear(AABB volume) {
         BlockPos min = BlockPos.containing(volume.minX, volume.minY, volume.minZ);
         BlockPos max = BlockPos.containing(volume.maxX - EPSILON, volume.maxY - EPSILON, volume.maxZ - EPSILON);
@@ -115,7 +130,10 @@ final class WalkableTerrain {
     }
 
     private static AABB body(Step step, double height) {
-        Vec3 center = step.position();
+        return body(step.position(), height);
+    }
+
+    private static AABB body(Vec3 center, double height) {
         return new AABB(center.x - HALF_WIDTH, height + EPSILON, center.z - HALF_WIDTH,
                 center.x + HALF_WIDTH, height + PLAYER_HEIGHT, center.z + HALF_WIDTH);
     }

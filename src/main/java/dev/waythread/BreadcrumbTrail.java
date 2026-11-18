@@ -2,6 +2,7 @@ package dev.waythread;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiPredicate;
 import net.minecraft.world.phys.Vec3;
 
 final class BreadcrumbTrail {
@@ -21,6 +22,8 @@ final class BreadcrumbTrail {
     private Vec3 lastRewindPosition;
     private double lastEraseDistance;
     private boolean recordingPaused;
+    private Vec3 returnJoinPosition;
+    private BreadcrumbTrail returnMovement;
 
     BreadcrumbTrail(Vec3 anchor) {
         this.anchor = anchor;
@@ -119,6 +122,7 @@ final class BreadcrumbTrail {
             appendSample(lastPosition);
         }
         lastRewindPosition = null;
+        setReturnJoin(null);
     }
 
     RewindResult rewind(Vec3 position, double eraseDistance) {
@@ -153,9 +157,16 @@ final class BreadcrumbTrail {
             current.clear();
             segments.clear();
             currentStartIndex = 0;
+            setReturnJoin(null);
             return RewindResult.ARRIVED;
         }
-        if (matchedPoint < 0 || (matchedSegment == segments.size() && matchedPoint == current.size() - 1)) {
+        if (matchedPoint < 0) {
+            return RewindResult.UNCHANGED;
+        }
+        if (matchedSegment == segments.size() && matchedPoint == current.size() - 1) {
+            if (returnJoinPosition == null || current.getLast().equals(position)) {
+                setReturnJoin(position);
+            }
             return RewindResult.UNCHANGED;
         }
         if (matchedSegment == segments.size()) {
@@ -173,20 +184,90 @@ final class BreadcrumbTrail {
                 segments.subList(matchedSegment, segments.size()).clear();
             }
         }
+        setReturnJoin(position);
         return RewindResult.TRUNCATED;
     }
 
-    void resume(Vec3 position, int pointLimit) {
+    private void setReturnJoin(Vec3 position) {
+        returnJoinPosition = position;
+        returnMovement = null;
+    }
+
+    void trackReturnMovement(Vec3 position, double spacing, int pointLimit) {
+        if (returnJoinPosition == null) {
+            return;
+        }
+        int movementLimit = returnMovementLimit(pointLimit);
+        if (movementLimit < 1 || (returnMovement != null && returnMovement.pointCount() > movementLimit)) {
+            setReturnJoin(null);
+            return;
+        }
+        if (returnMovement == null) {
+            if (returnJoinPosition.equals(position)) {
+                return;
+            }
+            returnMovement = new BreadcrumbTrail(returnJoinPosition);
+        }
+        returnMovement.record(position, spacing, movementLimit);
+    }
+
+    private int returnMovementLimit(int pointLimit) {
+        // The temporary start shares a point with the retained trail only when the positions match.
+        return pointLimit - pointCount() + (current.getLast().equals(returnJoinPosition) ? 1 : 0);
+    }
+
+    void resume(Vec3 position, double spacing, int pointLimit, double eraseDistance, BiPredicate<Vec3, Vec3> canJoin) {
+        if (current.getLast().equals(position)) {
+            setReturnJoin(position);
+        } else {
+            trackReturnMovement(position, spacing, pointLimit);
+        }
         finishSegment();
         recordingPaused = false;
-        if (pointCount() < pointLimit) {
-            startAt(position);
+        if (pointCount() >= pointLimit) {
+            setReturnJoin(null);
+            return;
         }
+        if (returnJoinPosition == null) {
+            startAt(position);
+            return;
+        }
+
+        Vec3 end = current.getLast();
+        int movementLimit = returnMovementLimit(pointLimit);
+        if (!end.equals(returnJoinPosition) && end.distanceToSqr(returnJoinPosition) <= eraseDistance * eraseDistance
+                && canJoin.test(end, returnJoinPosition)) {
+            appendSample(returnJoinPosition);
+            finishSegment();
+        }
+        startAt(returnJoinPosition);
+        if (returnMovement != null) {
+            if (returnMovement.pointCount() < movementLimit) {
+                returnMovement.appendSample(returnMovement.lastPosition);
+            }
+            appendReturnMovement(returnMovement, pointLimit);
+        }
+        setReturnJoin(null);
+    }
+
+    private void appendReturnMovement(BreadcrumbTrail movement, int pointLimit) {
+        int firstMovementIndex = movement.segments.isEmpty() ? movement.currentStartIndex
+                : movement.segments.getFirst().startIndex();
+        int startIndex = currentStartIsRetained() ? currentStartIndex : currentStartIndex - firstMovementIndex;
+        for (Segment segment : movement.segments) {
+            segments.add(new Segment(segments.size(), startIndex + segment.startIndex(), segment.samples()));
+        }
+        currentStartIndex = startIndex + movement.currentStartIndex;
+        current.clear();
+        current.addAll(movement.current);
+        lastPosition = movement.lastPosition;
+        segmentLength = movement.segmentLength;
+        recordingPaused = movement.recordingPaused && pointCount() < pointLimit;
     }
 
     private void startAt(Vec3 position) {
         if (!current.getFirst().equals(position)) {
-            if (currentStartIndex == 0 || (!segments.isEmpty() && segments.getLast().endIndex() == currentStartIndex)) {
+            if (currentStartIsRetained()) {
                 currentStartIndex++;
             }
             current.set(0, position);
@@ -194,6 +275,10 @@ final class BreadcrumbTrail {
         lastPosition = position;
         distanceSinceSample = 0;
         pending.clear();
+    }
+
+    private boolean currentStartIsRetained() {
+        return currentStartIndex == 0 || (!segments.isEmpty() && segments.getLast().endIndex() == currentStartIndex);
     }
 
     private void finishSegment() {

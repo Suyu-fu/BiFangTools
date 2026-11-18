@@ -1,29 +1,44 @@
 package dev.waythread;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.MeshData;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.SimpleAnimatedParticle;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.RenderStateShard;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.TranslatableEnum;
+import org.joml.Matrix4fStack;
 import org.joml.Vector3f;
 
 final class TrailParticles {
     private static final double THREAD_HEIGHT = 0.15;
     private static final double PULSE_LENGTH = 8.0;
     private final List<Particle> visible = new ArrayList<>();
+    private final List<Particle> anchorParticles = new ArrayList<>();
     private DisplayMode displayMode = DisplayMode.LINE;
     private Style style = Style.DUST;
-    private Density density = Density.STANDARD;
+    private AnchorRenderer.Appearance anchorAppearance = AnchorRenderer.Appearance.PARTICLES;
     private String trailColor;
     private String anchorColor;
     private int trailRgb;
@@ -32,12 +47,12 @@ final class TrailParticles {
     private DustParticleOptions anchorDust;
     private Vector3f pulseColor;
 
-    void updateAppearance(DisplayMode displayMode, Style style, Density density) {
-        if (displayMode != this.displayMode || style != this.style || density != this.density) {
+    void updateAppearance(DisplayMode displayMode, Style style, AnchorRenderer.Appearance anchorAppearance) {
+        if (displayMode != this.displayMode || style != this.style || anchorAppearance != this.anchorAppearance) {
             clear();
             this.displayMode = displayMode;
             this.style = style;
-            this.density = density;
+            this.anchorAppearance = anchorAppearance;
         }
     }
 
@@ -60,35 +75,124 @@ final class TrailParticles {
         return new Vector3f((rgb >> 16) / 255.0F, ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F);
     }
 
-    void thread(List<Vec3> points, Vec3 player, double rangeSquared, int limit,
-            Set<BlockPos> drawn, boolean returning) {
+    TrailDraw startTrail(Vec3 player, double rangeSquared, double spacing, int limit, boolean returning) {
         ParticleOptions type = style.options(threadDust);
         int lifetime = returning ? 7 : 11;
-        for (int i = points.size() - 1; i >= 0 && drawn.size() < limit; i--) {
-            Vec3 point = points.get(i);
-            dot(type, point, player, rangeSquared, drawn, lifetime);
-            if (i > 0 && displayMode == DisplayMode.LINE) {
-                Vec3 previous = points.get(i - 1);
-                int steps = (int) Math.ceil(point.distanceTo(previous) / density.spacing);
-                for (int step = 1; step < steps && drawn.size() < limit; step++) {
-                    dot(type, point.lerp(previous, (double) step / steps), player, rangeSquared, drawn, lifetime);
+        return new TrailDraw(player, rangeSquared, spacing, limit, displayMode,
+                point -> spawnStyled(type, point.add(0, THREAD_HEIGHT, 0), lifetime, trailRgb, 1.0F));
+    }
+
+    static final class TrailDraw {
+        private final Vec3 player;
+        private final double rangeSquared;
+        private final double spacing;
+        private final int limit;
+        private final DisplayMode mode;
+        private final int gridScale;
+        private final Consumer<Vec3> spawn;
+        private final Set<BlockPos> drawn = new HashSet<>();
+        private Vec3 previousStart;
+        private double distanceToNext;
+
+        TrailDraw(Vec3 player, double rangeSquared, double spacing, int limit, DisplayMode mode, Consumer<Vec3> spawn) {
+            this.player = player;
+            this.rangeSquared = rangeSquared;
+            this.spacing = spacing;
+            this.limit = limit;
+            this.mode = mode;
+            this.gridScale = mode == DisplayMode.WAYPOINTS ? 3 : 32;
+            this.spawn = spawn;
+        }
+
+        boolean hasRoom() {
+            return limit == 0 || drawn.size() < limit;
+        }
+
+        void path(List<Vec3> points) {
+            if (points.isEmpty() || !hasRoom()) {
+                return;
+            }
+            if (mode == DisplayMode.WAYPOINTS) {
+                for (int i = points.size() - 1; i >= 0 && hasRoom(); i--) {
+                    draw(points.get(i));
                 }
+                return;
+            }
+
+            Vec3 end = points.getLast();
+            if (!end.equals(previousStart)) {
+                draw(end);
+                distanceToNext = spacing;
+            }
+            for (int i = points.size() - 2; i >= 0 && hasRoom(); i--) {
+                Vec3 start = points.get(i);
+                double length = end.distanceTo(start);
+                if (length > 0) {
+                    while (distanceToNext <= length && hasRoom()) {
+                        draw(end.lerp(start, distanceToNext / length));
+                        distanceToNext += spacing;
+                    }
+                    distanceToNext -= length;
+                }
+                end = start;
+            }
+            previousStart = end;
+        }
+
+        private void draw(Vec3 point) {
+            if (point.distanceToSqr(player) <= rangeSquared
+                    && drawn.add(BlockPos.containing(point.x * gridScale, point.y * gridScale, point.z * gridScale))) {
+                spawn.accept(point);
             }
         }
     }
 
-    private void dot(ParticleOptions type, Vec3 point, Vec3 player, double rangeSquared, Set<BlockPos> drawn, int lifetime) {
-        if (point.distanceToSqr(player) <= rangeSquared
-                && drawn.add(BlockPos.containing(point.x * density.gridScale, point.y * density.gridScale,
-                        point.z * density.gridScale))) {
-            spawnStyled(type, point.add(0, THREAD_HEIGHT, 0), lifetime, trailRgb, 1.0F);
+    void anchor(Vec3 point) {
+        if (anchorAppearance != AnchorRenderer.Appearance.PARTICLES) {
+            return;
+        }
+        ParticleOptions type = style.options(anchorDust);
+        spawnAnchorParticle(type, point.add(0, 0.24, 0));
+        spawnAnchorParticle(type, point.add(0, 0.60, 0));
+    }
+
+    private void spawnAnchorParticle(ParticleOptions type, Vec3 point) {
+        Particle particle = spawnStyled(type, point, 11, anchorRgb, 1.8F);
+        if (particle != null) {
+            anchorParticles.add(particle);
         }
     }
 
-    void anchor(Vec3 point) {
-        ParticleOptions type = style.options(anchorDust);
-        spawnStyled(type, point.add(0, 0.24, 0), 11, anchorRgb, 1.8F);
-        spawnStyled(type, point.add(0, 0.60, 0), 11, anchorRgb, 1.8F);
+    void renderSeeThroughAnchor(RenderLevelStageEvent event, float partialTick, Vec3 displayOffset) {
+        BufferBuilder buffer = null;
+        for (Particle particle : anchorParticles) {
+            if (particle.isAlive()) {
+                if (buffer == null) {
+                    buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
+                }
+                particle.render(buffer, event.getCamera(), partialTick);
+            }
+        }
+        MeshData mesh = buffer == null ? null : buffer.build();
+        if (mesh == null) {
+            return;
+        }
+        Matrix4fStack view = RenderSystem.getModelViewStack();
+        view.pushMatrix().mul(event.getModelViewMatrix());
+        boolean projected = displayOffset.lengthSqr() > 0;
+        if (projected) {
+            view.translate((float) displayOffset.x, (float) displayOffset.y, (float) displayOffset.z);
+        }
+        RenderSystem.applyModelViewMatrix();
+        try {
+            if (projected) {
+                RenderSystem.disableDepthTest();
+            }
+            (projected ? AnchorParticleRenderTypes.PROJECTED : AnchorParticleRenderTypes.OCCLUDED).draw(mesh);
+        } finally {
+            view.popMatrix();
+            RenderSystem.applyModelViewMatrix();
+        }
     }
 
     void pulse(BreadcrumbTrail trail, List<Vec3> tail, Map<BreadcrumbTrail.Segment, List<Vec3>> routes,
@@ -161,7 +265,7 @@ final class TrailParticles {
         return path;
     }
 
-    private void spawnStyled(ParticleOptions type, Vec3 point, int lifetime, int rgb, float scale) {
+    private Particle spawnStyled(ParticleOptions type, Vec3 point, int lifetime, int rgb, float scale) {
         Particle effect = spawn(type, point, lifetime);
         if (effect != null && style != Style.DUST) {
             effect.setColor((rgb >> 16) / 255.0F, ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F);
@@ -170,6 +274,7 @@ final class TrailParticles {
                 animated.setFadeColor(rgb);
             }
         }
+        return effect;
     }
 
     private Particle spawn(ParticleOptions type, Vec3 point, int lifetime) {
@@ -185,11 +290,34 @@ final class TrailParticles {
 
     void prune() {
         visible.removeIf(effect -> !effect.isAlive());
+        anchorParticles.removeIf(effect -> !effect.isAlive());
     }
 
     void clear() {
         visible.forEach(Particle::remove);
         visible.clear();
+        anchorParticles.clear();
+    }
+
+    private static final class AnchorParticleRenderTypes {
+        private static final RenderType OCCLUDED = create("waythread_anchor_particles_behind_blocks",
+                RenderStateShard.GREATER_DEPTH_TEST);
+        private static final RenderType PROJECTED = create("waythread_anchor_particles_at_distance",
+                RenderStateShard.NO_DEPTH_TEST);
+
+        @SuppressWarnings("deprecation") // ParticleEngine still registers this atlas in Minecraft 1.21.1.
+        private static RenderType create(String name, RenderStateShard.DepthTestStateShard depthTest) {
+            return RenderType.create(name, DefaultVertexFormat.PARTICLE, VertexFormat.Mode.QUADS, 1536,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(new RenderStateShard.ShaderStateShard(GameRenderer::getParticleShader))
+                            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_PARTICLES, false, false))
+                            .setLightmapState(RenderStateShard.LIGHTMAP)
+                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                            .setDepthTestState(depthTest)
+                            .setCullState(RenderStateShard.NO_CULL)
+                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+                            .createCompositeState(false));
+        }
     }
 
     enum Style implements TranslatableEnum {
@@ -225,26 +353,4 @@ final class TrailParticles {
         }
     }
 
-    enum Density implements TranslatableEnum {
-        LOW(0.50, 3, 0.5), STANDARD(0.25, 5, 1.0), HIGH(0.15, 8, 1.6);
-
-        private final double spacing;
-        private final int gridScale;
-        private final double budgetScale;
-
-        Density(double spacing, int gridScale, double budgetScale) {
-            this.spacing = spacing;
-            this.gridScale = gridScale;
-            this.budgetScale = budgetScale;
-        }
-
-        int particleLimit(int loadDistance) {
-            return (int) Math.round(Math.max(128, loadDistance * 9) * budgetScale);
-        }
-
-        @Override
-        public Component getTranslatedName() {
-            return Component.translatable("waythread.configuration.particleDensity." + name().toLowerCase(Locale.ROOT));
-        }
-    }
 }

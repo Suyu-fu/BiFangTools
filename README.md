@@ -6,14 +6,14 @@ Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 
 ## 安装
 
-将 `build/libs/bifangs-bag-of-curiosities-0.5.2.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
+将 `build/libs/bifangs-bag-of-curiosities-0.5.3.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
 
 ## 引路丝（Waythread）
 
 记录走过的路线，沿粒子原路返回。灵感来自 [AtomicStryker 的 Magic Yarn](https://github.com/AtomicStryker/atomicstrykers-minecraft-mods/tree/1.7.10/MagicYarn)。
 
 1. 短按 **J** 标记起点，走过的位置会留下轨迹线或路标点。
-2. 按 **K** 切换返程。亮点沿线朝起点移动。走近任意记录点时，路线会截断到消除范围内最近的记录点。再按 **K** 恢复记录。
+2. 按 **K** 切换返程。亮点沿线朝起点移动。走近任意记录点时，路线会截断到消除范围内最近的记录点。再按 **K** 恢复记录时，接入你从最近接回处实际走过的路。短接不通或遇到传送时会保留断点。
 3. 长按 **J** 两秒清除路线。
 4. 按 **Ctrl+J** 切换路线粒子的显示。隐藏时仍可记路和返程，重新启动客户端后默认显示。可在「选项 → 控制 → 按键绑定」更改按键。
 
@@ -32,11 +32,18 @@ Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 | `maxRecordedPoints` | 20,000 点 | 起点计入，路段共用的端点只计一次。达到上限时暂停新增记录并提示一次。可设 2–200,000 点。调低上限时保留当前路线，直到返程消点或手动清除。 |
 | `returnEraseDistance` | 2 格 | 返程时匹配这个距离内最近的记录点，截去它之后的路线。匹配到起点时结束返程。可设 0.5–6 格。 |
 | `displayMode` | 轨迹线 | `LINE` 显示连线，`WAYPOINTS` 只标记记录点。两者都支持起点和移动的指路亮点。 |
-| `particleStyle` | 细尘 | 路线和起点可选细尘（`DUST`）、电火花（`SPARK`）、荧光（`GLOW`）和薄雾（`MIST`）。 |
-| `particleDensity` | 标准 | 轨迹线可选低（`LOW`）、标准（`STANDARD`）和高（`HIGH`）三档密度。 |
+| `particleStyle` | 细尘 | 路线粒子可选细尘（`DUST`）、电火花（`SPARK`）、荧光（`GLOW`）和薄雾（`MIST`）。起点选用粒子外观时也使用这个样式。 |
+| `trailParticleSpacing` | 0.5 格 | 轨迹线粒子的间距，可设 0.1–2 格。 |
+| `trailParticleLimit` | 90 个 | 每次刷新最多绘制的路线粒子数，可设 1–2,048 个。滑块最右侧是「无上限」，对应配置值 `0`。 |
 | `trailColor` | `#38E3FF` | 路线与方向亮点的颜色，使用 `#RRGGBB` 格式。 |
-| `anchorColor` | `#FFB036` | 起点标记的颜色，使用 `#RRGGBB` 格式。 |
+| `anchorFollowsTrailColor` | 开启 | 起点标记与路线使用相同的颜色。 |
+| `anchorColor` | `#FFB036` | 关闭颜色同步时使用的起点颜色，格式为 `#RRGGBB`。 |
+| `anchorAppearance` | 粒子 | 起点可选粒子（`PARTICLES`）、浮空球（`ORB`）和浮空立方体（`CUBE`）。浮空模型带细描边。 |
+| `anchorSeeThrough` | 关闭 | 隔着方块显示起点标记本身。 |
+| `anchorSeeThroughDistance` | 512 格 | 开启起点透视时使用的起点显示距离，可设 4–4,096 格。路线仍使用自己的加载距离。远处的起点标记会保留可辨识的大小。 |
 | `showRecordingDirection` | 开启 | 记路时显示朝路线末端移动的亮点。 |
+| `showReturnProgress` | 开启 | 返程时显示进度条和百分比，以进入返程时的记录点数为基准。 |
+| `returnProgressFontSize` | 7 px | 进度条上方的文字大小，可设 5–16 个游戏界面像素，随 Minecraft 界面缩放。 |
 | `showArrivalMessage` | 开启 | 返程到达起点时提示「已到达起点」，并播放一声经验球音效。 |
 | `clearOnArrival` | 开启 | 返程结束后清除起点标记。关闭后保留起点标记，短按 J 可以从当前位置重新记路。 |
 
