@@ -7,6 +7,7 @@ final class WaythreadConfig {
     static final String DEFAULT_TRAIL_COLOR = "#38E3FF";
     static final String DEFAULT_ANCHOR_COLOR = "#FFB036";
     static final String TRAIL_PARTICLE_LIMIT_KEY = "trailParticleLimit";
+    static final int MAX_RECORDED_POINT_LIMIT = 16_384;
     static final int MAX_TRAIL_PARTICLE_LIMIT = 2048;
     private static final Pattern RGB_COLOR = Pattern.compile("#[0-9a-fA-F]{6}");
 
@@ -45,7 +46,7 @@ final class WaythreadConfig {
         MAX_RECORDED_POINTS = builder
                 .comment("Maximum number of recorded points, including the starting point.")
                 .translation("waythread.configuration.maxRecordedPoints")
-                .defineInRange("maxRecordedPoints", 8_192, 1_024, 16_384);
+                .defineInRange("maxRecordedPoints", 8_192, 1_024, MAX_RECORDED_POINT_LIMIT);
         RETURN_ERASE_DISTANCE = builder
                 .comment("Distance in blocks for matching a recorded point and reaching the start in return mode.")
                 .translation("waythread.configuration.returnEraseDistance")

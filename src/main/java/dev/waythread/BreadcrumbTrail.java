@@ -1,8 +1,12 @@
 package dev.waythread;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiPredicate;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.phys.Vec3;
 
 final class BreadcrumbTrail {
@@ -29,6 +33,86 @@ final class BreadcrumbTrail {
         this.anchor = anchor;
         lastPosition = anchor;
         current.add(anchor);
+    }
+
+    CompoundTag writeSave() {
+        CompoundTag tag = new CompoundTag();
+        TrailSave.putPosition(tag, "Anchor", anchor);
+        TrailSave.putPosition(tag, "LastPosition", lastPosition);
+        TrailSave.putPositions(tag, "Current", current);
+        TrailSave.putPositions(tag, "Pending", pending);
+        tag.putInt("CurrentStart", currentStartIndex);
+        tag.putDouble("DistanceSinceSample", distanceSinceSample);
+        tag.putDouble("SegmentLength", segmentLength);
+        tag.putBoolean("RecordingPaused", recordingPaused);
+        ListTag encodedSegments = new ListTag();
+        for (Segment segment : segments) {
+            CompoundTag encoded = new CompoundTag();
+            encoded.putInt("Start", segment.startIndex());
+            TrailSave.putPositions(encoded, "Samples", segment.samples());
+            encodedSegments.add(encoded);
+        }
+        tag.put("Segments", encodedSegments);
+        if (returnJoinPosition != null) {
+            TrailSave.putPosition(tag, "ReturnJoin", returnJoinPosition);
+        }
+        if (returnMovement != null) {
+            tag.put("ReturnMovement", returnMovement.writeSave());
+        }
+        return tag;
+    }
+
+    static BreadcrumbTrail readSave(CompoundTag tag, int pointLimit, boolean allowReturnMovement) throws IOException {
+        BreadcrumbTrail path = new BreadcrumbTrail(TrailSave.position(tag, "Anchor"));
+        int previousIndex = 0;
+        Vec3 previousEnd = path.anchor;
+        ListTag encodedSegments = TrailSave.compounds(tag, "Segments", pointLimit);
+        for (int index = 0; index < encodedSegments.size(); index++) {
+            CompoundTag encoded = encodedSegments.getCompound(index);
+            int start = encoded.getInt("Start");
+            List<Vec3> samples = TrailSave.positions(encoded, "Samples", pointLimit);
+            TrailSave.require(samples.size() >= 2 && start <= pointLimit - samples.size(), "Invalid route segment size");
+            validateLink(start, samples.getFirst(), previousIndex, previousEnd);
+            path.addSegment(start, List.copyOf(samples), pathLength(samples));
+            previousIndex = start + samples.size() - 1;
+            previousEnd = samples.getLast();
+        }
+
+        path.currentStartIndex = tag.getInt("CurrentStart");
+        List<Vec3> tail = TrailSave.positions(tag, "Current", pointLimit);
+        if (tail.isEmpty()) {
+            TrailSave.require(path.segments.isEmpty() && path.currentStartIndex == 0, "Invalid finished route");
+        } else {
+            TrailSave.require(path.currentStartIndex <= pointLimit - tail.size(), "Route exceeds its point limit");
+            validateLink(path.currentStartIndex, tail.getFirst(), previousIndex, previousEnd);
+        }
+        path.current.clear();
+        path.current.addAll(tail);
+        path.pending.addAll(TrailSave.positions(tag, "Pending", pointLimit));
+        path.lastPosition = TrailSave.position(tag, "LastPosition");
+        path.distanceSinceSample = tag.getDouble("DistanceSinceSample");
+        path.segmentLength = tag.getDouble("SegmentLength");
+        TrailSave.require(Double.isFinite(path.distanceSinceSample) && path.distanceSinceSample >= 0
+                && Double.isFinite(path.segmentLength) && path.segmentLength >= 0, "Invalid route distance");
+        path.recordingPaused = tag.getBoolean("RecordingPaused");
+        if (tag.contains("ReturnJoin")) {
+            TrailSave.require(allowReturnMovement && !tail.isEmpty(), "Unexpected return join");
+            path.returnJoinPosition = TrailSave.position(tag, "ReturnJoin");
+        }
+        if (tag.contains("ReturnMovement")) {
+            int available = pointLimit - path.pointCount() + 1;
+            TrailSave.require(path.returnJoinPosition != null && available > 0
+                    && tag.contains("ReturnMovement", Tag.TAG_COMPOUND), "Invalid continued return route");
+            path.returnMovement = readSave(tag.getCompound("ReturnMovement"), available, false);
+            TrailSave.require(path.returnMovement.pointCount() > 0
+                    && path.returnMovement.anchor.equals(path.returnJoinPosition), "Invalid return route start");
+        }
+        return path;
+    }
+
+    private static void validateLink(int start, Vec3 first, int previousIndex, Vec3 previousEnd) throws IOException {
+        TrailSave.require(start == previousIndex + 1 || (start == previousIndex && first.equals(previousEnd)),
+                "Invalid route segment index");
     }
 
     boolean record(Vec3 position, double spacing, int pointLimit) {
@@ -117,52 +201,54 @@ final class BreadcrumbTrail {
                 && (current.size() > 1 || !segments.isEmpty() || !current.getLast().equals(lastPosition));
     }
 
-    void beginReturn(int pointLimit) {
+    void captureEndpoint(int pointLimit) {
         if (pointCount() < pointLimit) {
             appendSample(lastPosition);
         }
+    }
+
+    void beginReturn(int pointLimit) {
+        captureEndpoint(pointLimit);
+        resetReturnMatch();
+    }
+
+    void resetReturnMatch() {
         lastRewindPosition = null;
         setReturnJoin(null);
     }
 
     RewindResult rewind(Vec3 position, double eraseDistance) {
+        return rewind(position, eraseDistance, false);
+    }
+
+    RewindResult rewind(Vec3 position, double eraseDistance, boolean keepAnchor) {
         if (position.equals(lastRewindPosition) && eraseDistance == lastEraseDistance) {
             return RewindResult.UNCHANGED;
         }
         lastRewindPosition = position;
         lastEraseDistance = eraseDistance;
 
-        double bestDistance = eraseDistance * eraseDistance;
-        int matchedSegment = -1;
-        int matchedPoint = -1;
-        int nextStartIndex = pointCount();
-        for (int index = segments.size(); index >= 0; index--) {
-            Segment segment = index == segments.size() ? null : segments.get(index);
-            List<Vec3> points = segment == null ? current : segment.samples();
-            int startIndex = segment == null ? currentStartIndex : segment.startIndex();
-            // A shared endpoint keeps its index in both segments. Check the anchor separately.
-            int lastPoint = Math.min(points.size() - 1, nextStartIndex - startIndex - 1);
-            int firstPoint = startIndex == 0 ? 1 : 0;
-            for (int point = lastPoint; point >= firstPoint; point--) {
-                double distance = position.distanceToSqr(points.get(point));
-                if (distance < bestDistance || (matchedPoint < 0 && distance == bestDistance)) {
-                    bestDistance = distance;
-                    matchedSegment = index;
-                    matchedPoint = point;
-                }
-            }
-            nextStartIndex = startIndex;
+        Match match = findMatch(position, eraseDistance);
+        if (match == null) {
+            return RewindResult.UNCHANGED;
         }
-        if (position.distanceToSqr(anchor) <= bestDistance) {
+        if (match == Match.ANCHOR) {
             current.clear();
             segments.clear();
             currentStartIndex = 0;
+            distanceSinceSample = 0;
+            segmentLength = 0;
+            pending.clear();
             setReturnJoin(null);
+            if (keepAnchor) {
+                current.add(anchor);
+                lastPosition = anchor;
+                return RewindResult.BOUNDARY;
+            }
             return RewindResult.ARRIVED;
         }
-        if (matchedPoint < 0) {
-            return RewindResult.UNCHANGED;
-        }
+        int matchedSegment = match.segment();
+        int matchedPoint = match.point();
         if (matchedSegment == segments.size() && matchedPoint == current.size() - 1) {
             if (returnJoinPosition == null || current.getLast().equals(position)) {
                 setReturnJoin(position);
@@ -186,6 +272,38 @@ final class BreadcrumbTrail {
         }
         setReturnJoin(position);
         return RewindResult.TRUNCATED;
+    }
+
+    boolean hasPointWithin(Vec3 position, double eraseDistance) {
+        return findMatch(position, eraseDistance) != null;
+    }
+
+    private Match findMatch(Vec3 position, double eraseDistance) {
+        double bestDistance = eraseDistance * eraseDistance;
+        int matchedSegment = -1;
+        int matchedPoint = -1;
+        int nextStartIndex = pointCount();
+        for (int index = segments.size(); index >= 0; index--) {
+            Segment segment = index == segments.size() ? null : segments.get(index);
+            List<Vec3> points = segment == null ? current : segment.samples();
+            int startIndex = segment == null ? currentStartIndex : segment.startIndex();
+            // A shared endpoint keeps its index in both segments. Check the anchor separately.
+            int lastPoint = Math.min(points.size() - 1, nextStartIndex - startIndex - 1);
+            int firstPoint = startIndex == 0 ? 1 : 0;
+            for (int point = lastPoint; point >= firstPoint; point--) {
+                double distance = position.distanceToSqr(points.get(point));
+                if (distance < bestDistance || (matchedPoint < 0 && distance == bestDistance)) {
+                    bestDistance = distance;
+                    matchedSegment = index;
+                    matchedPoint = point;
+                }
+            }
+            nextStartIndex = startIndex;
+        }
+        if (position.distanceToSqr(anchor) <= bestDistance) {
+            return Match.ANCHOR;
+        }
+        return matchedPoint < 0 ? null : new Match(matchedSegment, matchedPoint);
     }
 
     private void setReturnJoin(Vec3 position) {
@@ -326,6 +444,10 @@ final class BreadcrumbTrail {
         return anchor;
     }
 
+    Vec3 endpoint() {
+        return current.getLast();
+    }
+
     List<Segment> segments() {
         return segments;
     }
@@ -368,7 +490,11 @@ final class BreadcrumbTrail {
     }
 
     enum RewindResult {
-        UNCHANGED, TRUNCATED, ARRIVED
+        UNCHANGED, TRUNCATED, BOUNDARY, ARRIVED
+    }
+
+    private record Match(int segment, int point) {
+        private static final Match ANCHOR = new Match(-1, -1);
     }
 
     record Segment(int index, int startIndex, List<Vec3> samples, double startDistance, double length) {

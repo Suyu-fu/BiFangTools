@@ -2,6 +2,10 @@ package dev.waythread;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.logging.LogUtils;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,12 +14,17 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.ReceivingLevelScreen;
+import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
@@ -23,6 +32,8 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
@@ -33,15 +44,19 @@ import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
 import net.neoforged.neoforge.client.settings.KeyModifier;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import org.lwjgl.glfw.GLFW;
+import org.slf4j.Logger;
 
 @Mod(value = Waythread.MOD_ID, dist = Dist.CLIENT)
 public final class Waythread {
+    private static final Logger LOGGER = LogUtils.getLogger();
     static final String MOD_ID = "bifangs_bag_of_curiosities";
     private static final String CATEGORY = "key.categories.waythread";
     private static final ResourceLocation RETURN_PROGRESS_LAYER = ResourceLocation.fromNamespaceAndPath(MOD_ID, "return_progress");
     private static final int CACHE_MARGIN = 6;
     private static final long CLEAR_HOLD_MS = 2_000;
+    private static final long SAVE_INTERVAL_MS = 30_000;
     private static final int COMPLETED_PROGRESS_TICKS = 30;
 
     private final KeyMapping record = new KeyMapping("key.waythread.navigate",
@@ -55,7 +70,11 @@ public final class Waythread {
 
     private ClientLevel level;
     private LocalPlayer player;
-    private BreadcrumbTrail trail;
+    private DimensionalTrail trail;
+    private Vec3 lastPosition;
+    private Path trailFile;
+    private long nextSave;
+    private boolean saveDirty;
     private BreadcrumbTrail.Segment searchedSegment;
     private RouteSearch search;
     private Mode mode = Mode.RECORDING;
@@ -75,6 +94,8 @@ public final class Waythread {
         modBus.addListener(this::registerGuiLayers);
         NeoForge.EVENT_BUS.addListener(this::tick);
         NeoForge.EVENT_BUS.addListener(this::renderAnchor);
+        NeoForge.EVENT_BUS.addListener(this::leaveWorld);
+        NeoForge.EVENT_BUS.addListener(this::shutDown);
     }
 
     private void registerKeys(RegisterKeyMappingsEvent event) {
@@ -141,12 +162,8 @@ public final class Waythread {
 
     private void tick(ClientTickEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level != level || minecraft.player != player) {
-            reset();
-            level = minecraft.level;
-            player = minecraft.player;
-        }
-        boolean canUseKeys = level != null && player != null && player.isAlive() && minecraft.screen == null;
+        boolean ready = updateWorld(minecraft);
+        boolean canUseKeys = ready && player.isAlive() && minecraft.screen == null;
         boolean suppressRecord = handleVisibilityKey(canUseKeys, minecraft.getWindow().getWindow());
         handleRecordKey(canUseKeys && !suppressRecord);
         while (switchMode.consumeClick()) {
@@ -158,33 +175,46 @@ public final class Waythread {
         if (!switchMode.isDown()) {
             modeKeyHandled = false;
         }
-        if (trail == null || player == null || !player.isAlive() || minecraft.isPaused()) {
+        if (!ready || trail == null || !player.isAlive() || minecraft.isPaused()) {
             return;
         }
 
         Vec3 position = player.position();
+        boolean moved = !position.equals(lastPosition);
+        lastPosition = position;
+        int previousPointCount = trail.pointCount();
         boolean returning = mode == Mode.RETURNING;
         boolean truncated = false;
         if (returning) {
-            BreadcrumbTrail.RewindResult result = trail.rewind(position, WaythreadConfig.RETURN_ERASE_DISTANCE.get());
+            BreadcrumbTrail.RewindResult result = trail.rewind(level.dimension(), position,
+                    WaythreadConfig.RETURN_ERASE_DISTANCE.get());
             if (result == BreadcrumbTrail.RewindResult.ARRIVED) {
                 finishReturn();
                 return;
             }
-            trail.trackReturnMovement(position, WaythreadConfig.RECORD_POINT_SPACING.get(),
-                    WaythreadConfig.MAX_RECORDED_POINTS.get());
-            if (result == BreadcrumbTrail.RewindResult.TRUNCATED) {
+            if (!trail.waitingToRejoin()) {
+                trail.trackReturnMovement(position, WaythreadConfig.RECORD_POINT_SPACING.get(),
+                        WaythreadConfig.MAX_RECORDED_POINTS.get());
+            }
+            if (result == BreadcrumbTrail.RewindResult.BOUNDARY) {
+                markTrailChanged();
+                clearDisplay();
+                showRejoinHint();
+            } else if (result == BreadcrumbTrail.RewindResult.TRUNCATED) {
                 truncated = true;
-                localRoutes.keySet().removeIf(segment -> !trail.contains(segment));
+                BreadcrumbTrail path = trail.visiblePath(level.dimension());
+                localRoutes.keySet().removeIf(segment -> !path.contains(segment));
                 particles.clear();
             }
         } else if (mode == Mode.RECORDING) {
-            int pointLimit = WaythreadConfig.MAX_RECORDED_POINTS.get();
-            if (trail.record(position, WaythreadConfig.RECORD_POINT_SPACING.get(), pointLimit)) {
-                message("point_limit", pointLimit);
-            }
+            recordPosition(position);
         }
-        if (!trailVisible) {
+        if (mode != Mode.ARRIVED && (moved || previousPointCount != trail.pointCount())) {
+            markTrailChanged();
+        }
+        saveTrail(false);
+        BreadcrumbTrail path = trail.visiblePath(level.dimension());
+        if (!trailVisible || path == null) {
             return;
         }
 
@@ -198,7 +228,7 @@ public final class Waythread {
             localRoutes.clear();
         } else if (search != null) {
             if (!searchedSegment.isNear(position, rangeSquared)
-                    || !trail.contains(searchedSegment)) {
+                    || !path.contains(searchedSegment)) {
                 search = null;
                 searchedSegment = null;
             } else {
@@ -211,22 +241,138 @@ public final class Waythread {
             }
         }
         boolean refresh = truncated || player.tickCount % 5 == 0;
-        boolean showDirection = returning || (mode == Mode.RECORDING && WaythreadConfig.SHOW_RECORDING_DIRECTION.get());
+        boolean showDirection = returning ? !trail.waitingToRejoin()
+                : mode == Mode.RECORDING && WaythreadConfig.SHOW_RECORDING_DIRECTION.get();
         if (!refresh && !showDirection) {
             return;
         }
         particles.updateColors(WaythreadConfig.TRAIL_COLOR.get(), WaythreadConfig.anchorColor());
-        List<Vec3> tail = mode == Mode.RECORDING && !waypoints ? trail.recordingTail() : trail.current();
+        List<Vec3> tail = mode == Mode.RECORDING && !waypoints ? path.recordingTail() : path.current();
         if (refresh) {
             particles.updateAppearance(displayMode, WaythreadConfig.PARTICLE_STYLE.get(), WaythreadConfig.ANCHOR_APPEARANCE.get());
             if (!waypoints) {
                 int cacheDistance = loadDistance + CACHE_MARGIN;
                 localRoutes.keySet().removeIf(segment -> !segment.isNear(position, cacheDistance * cacheDistance));
             }
-            showTrail(tail, position, rangeSquared, waypoints);
+            showTrail(path, tail, position, rangeSquared, waypoints);
         }
         if (showDirection) {
-            particles.pulse(trail, tail, localRoutes, position, rangeSquared, player.tickCount, returning);
+            particles.pulse(path, tail, localRoutes, position, rangeSquared, player.tickCount, returning);
+        }
+    }
+
+    private boolean updateWorld(Minecraft minecraft) {
+        ClientLevel nextLevel = minecraft.level;
+        LocalPlayer nextPlayer = minecraft.player;
+        if (nextLevel == null || nextPlayer == null || minecraft.screen instanceof ReceivingLevelScreen) {
+            return false;
+        }
+        if (level == nextLevel && player == nextPlayer) {
+            return true;
+        }
+
+        if (player == null || player.connection != nextPlayer.connection) {
+            saveTrail(true);
+            reset();
+            level = nextLevel;
+            player = nextPlayer;
+            loadTrail(minecraft);
+            return true;
+        }
+
+        ResourceKey<Level> from = level == null ? null : level.dimension();
+        boolean changedDimension = trail != null && !player.isDeadOrDying()
+                && mode != Mode.ARRIVED && !nextLevel.dimension().equals(from);
+        level = nextLevel;
+        player = nextPlayer;
+        if (!changedDimension) {
+            discardTrail();
+            return true;
+        }
+
+        clearDisplay();
+        markTrailChanged();
+        Vec3 arrival = player.position();
+        if (mode == Mode.RECORDING) {
+            recordPosition(arrival);
+        } else if (!trail.crossBack(from, lastPosition, level.dimension(), arrival,
+                WaythreadConfig.RETURN_ERASE_DISTANCE.get())) {
+            showRejoinHint();
+        }
+        lastPosition = arrival;
+        return true;
+    }
+
+    private void leaveWorld(ClientPlayerNetworkEvent.LoggingOut event) {
+        saveTrail(true);
+        reset();
+        level = null;
+        player = null;
+        trailFile = null;
+        saveDirty = false;
+    }
+
+    private void shutDown(GameShuttingDownEvent event) {
+        saveTrail(true);
+    }
+
+    private void loadTrail(Minecraft minecraft) {
+        trailFile = null;
+        saveDirty = false;
+        nextSave = Util.getMillis() + SAVE_INTERVAL_MS;
+        IntegratedServer server = minecraft.getSingleplayerServer();
+        if (server == null) {
+            return;
+        }
+        try {
+            trailFile = TrailSave.fileFor(FMLPaths.CONFIGDIR.get(), server.getWorldPath(LevelResource.ROOT),
+                    server.getWorldData().worldGenOptions().seed());
+            TrailSave saved = TrailSave.read(trailFile);
+            if (saved == null) {
+                return;
+            }
+            trail = saved.trail();
+            mode = saved.mode();
+            returnStartPointCount = saved.returnStartPointCount();
+            lastPosition = player.position();
+            if (mode != Mode.ARRIVED) {
+                trail.restoreDimension(level.dimension(), mode == Mode.RETURNING);
+            }
+            if (mode == Mode.RETURNING && trail.waitingToRejoin()) {
+                showRejoinHint();
+            }
+        } catch (IOException | RuntimeException error) {
+            LOGGER.warn("Could not load the local Waythread route", error);
+        }
+    }
+
+    private void markTrailChanged() {
+        if (trailFile != null) {
+            saveDirty = true;
+        }
+    }
+
+    private void saveTrail(boolean force) {
+        if (trailFile == null || !saveDirty || (!force && Util.getMillis() < nextSave)) {
+            return;
+        }
+        nextSave = Util.getMillis() + SAVE_INTERVAL_MS;
+        try {
+            if (trail == null) {
+                Files.deleteIfExists(trailFile);
+            } else {
+                new TrailSave(trail, mode, returnStartPointCount).write(trailFile);
+            }
+            saveDirty = false;
+        } catch (IOException error) {
+            LOGGER.warn("Could not save the local Waythread route", error);
+        }
+    }
+
+    private void recordPosition(Vec3 position) {
+        int pointLimit = WaythreadConfig.MAX_RECORDED_POINTS.get();
+        if (trail.record(level.dimension(), position, WaythreadConfig.RECORD_POINT_SPACING.get(), pointLimit)) {
+            message("point_limit", pointLimit);
         }
     }
 
@@ -238,13 +384,18 @@ public final class Waythread {
         if (minecraft.level != level || minecraft.player != player || player == null || !player.isAlive()) {
             return;
         }
+        BreadcrumbTrail path = trail.visiblePath(level.dimension());
+        DimensionalTrail.Marker marker = trail.markerFor(path);
+        if (marker == DimensionalTrail.Marker.NONE) {
+            return;
+        }
         AnchorRenderer.Appearance appearance = WaythreadConfig.ANCHOR_APPEARANCE.get();
-        boolean particleAnchor = appearance == AnchorRenderer.Appearance.PARTICLES;
+        boolean particleAnchor = marker == DimensionalTrail.Marker.START && appearance == AnchorRenderer.Appearance.PARTICLES;
         boolean seeThrough = WaythreadConfig.ANCHOR_SEE_THROUGH.get();
         if (particleAnchor && !seeThrough) {
             return;
         }
-        Vec3 anchor = trail.anchor();
+        Vec3 anchor = path.anchor();
         int markerDistance = anchorDisplayDistance(seeThrough);
         if (anchor.distanceToSqr(player.position()) > markerDistance * markerDistance) {
             return;
@@ -260,9 +411,14 @@ public final class Waythread {
         }
         if (particleAnchor) {
             particles.renderSeeThroughAnchor(event, partialTick, displayPosition.subtract(anchor));
+            return;
+        }
+        boolean relay = marker == DimensionalTrail.Marker.RELAY;
+        String color = relay ? WaythreadConfig.TRAIL_COLOR.get() : WaythreadConfig.anchorColor();
+        int rgb = Integer.parseInt(color, 1, color.length(), 16);
+        if (relay) {
+            AnchorRenderer.renderRelay(event, displayPosition, seeThrough, rgb, time);
         } else {
-            String color = WaythreadConfig.anchorColor();
-            int rgb = Integer.parseInt(color, 1, color.length(), 16);
             AnchorRenderer.render(event, displayPosition, appearance, seeThrough, rgb, time);
         }
     }
@@ -313,7 +469,7 @@ public final class Waythread {
         }
         if (recordPressedAt >= 0 && !holdHandled && now - recordPressedAt >= CLEAR_HOLD_MS) {
             if (trail != null) {
-                reset();
+                discardTrail();
                 message("cleared");
             }
             holdHandled = true;
@@ -322,8 +478,11 @@ public final class Waythread {
             if (!holdHandled && (clicked || recordPressedAt >= 0)) {
                 if (trail == null || mode == Mode.ARRIVED) {
                     reset();
-                    trail = new BreadcrumbTrail(player.position());
+                    trail = new DimensionalTrail(level.dimension(), player.position());
+                    markTrailChanged();
                     message("marked");
+                } else if (mode == Mode.RETURNING && trail.waitingToRejoin()) {
+                    resumeRecording();
                 } else {
                     message(mode == Mode.RETURNING ? "returning" : "recording");
                 }
@@ -335,32 +494,87 @@ public final class Waythread {
 
     private void toggleReturn() {
         if (mode == Mode.RETURNING) {
-            trail.resume(player.position(), WaythreadConfig.RECORD_POINT_SPACING.get(),
-                    WaythreadConfig.MAX_RECORDED_POINTS.get(), WaythreadConfig.RETURN_ERASE_DISTANCE.get(),
-                    new WalkableTerrain(level)::canJoin);
-            mode = Mode.RECORDING;
-            returnStartPointCount = 0;
-            particles.clear();
-            message("resumed");
+            if (trail.waitingToRejoin()) {
+                rejoin();
+            } else {
+                resumeRecording();
+            }
         } else if (trail != null && trail.hasRecordedPath()) {
-            trail.beginReturn(WaythreadConfig.MAX_RECORDED_POINTS.get());
+            trail.beginReturn(level.dimension(), WaythreadConfig.MAX_RECORDED_POINTS.get());
             returnStartPointCount = trail.pointCount();
             mode = Mode.RETURNING;
+            markTrailChanged();
             particles.clear();
-            message("returning");
+            if (trail.waitingToRejoin()) {
+                showRejoinHint();
+            } else {
+                message("returning");
+            }
         } else {
             message("no_trail");
         }
     }
 
+    private void rejoin() {
+        switch (trail.rejoin(level.dimension(), player.position(), WaythreadConfig.RETURN_ERASE_DISTANCE.get())) {
+            case ARRIVED -> finishReturn();
+            case REJOINED -> {
+                markTrailChanged();
+                clearDisplay();
+                if (trail.waitingToRejoin()) {
+                    showRejoinHint();
+                } else {
+                    message("returning");
+                }
+            }
+            case NO_MATCH -> showRejoinHint();
+            case OVERLAP -> message("rejoin_overlap");
+        }
+    }
+
+    private void showRejoinHint() {
+        ResourceKey<Level> destination = trail.boundaryDestination();
+        if (destination != null && !destination.equals(level.dimension())) {
+            message("return_dimension", dimensionName(destination));
+        } else {
+            message("rejoin", switchMode.getTranslatedKeyMessage());
+        }
+    }
+
+    private static Component dimensionName(ResourceKey<Level> dimension) {
+        if (dimension.equals(Level.OVERWORLD)) {
+            return Component.translatable("flat_world_preset.minecraft.overworld");
+        }
+        if (dimension.equals(Level.NETHER)) {
+            return Component.translatable("advancements.nether.root.title");
+        }
+        if (dimension.equals(Level.END)) {
+            return Component.translatable("advancements.end.root.title");
+        }
+        return Component.literal(dimension.location().toString());
+    }
+
+    private void resumeRecording() {
+        trail.resume(level.dimension(), player.position(), WaythreadConfig.RECORD_POINT_SPACING.get(),
+                WaythreadConfig.MAX_RECORDED_POINTS.get(), WaythreadConfig.RETURN_ERASE_DISTANCE.get(),
+                new WalkableTerrain(level)::canJoin);
+        mode = Mode.RECORDING;
+        returnStartPointCount = 0;
+        markTrailChanged();
+        clearDisplay();
+        message("resumed");
+    }
+
     private void finishReturn() {
-        BreadcrumbTrail completed = trail;
+        DimensionalTrail completed = trail;
         reset();
         returnCompletedUntil = player.tickCount + COMPLETED_PROGRESS_TICKS;
         if (!WaythreadConfig.CLEAR_ON_ARRIVAL.get()) {
             trail = completed;
             mode = Mode.ARRIVED;
         }
+        markTrailChanged();
+        saveTrail(true);
         if (WaythreadConfig.SHOW_ARRIVAL_MESSAGE.get()) {
             message("arrived");
             Minecraft.getInstance().getSoundManager().play(
@@ -368,12 +582,12 @@ public final class Waythread {
         }
     }
 
-    private void showTrail(List<Vec3> tail, Vec3 position, double rangeSquared, boolean waypoints) {
+    private void showTrail(BreadcrumbTrail path, List<Vec3> tail, Vec3 position, double rangeSquared, boolean waypoints) {
         particles.prune();
         TrailParticles.TrailDraw drawing = particles.startTrail(position, rangeSquared,
                 WaythreadConfig.TRAIL_PARTICLE_SPACING.get(), WaythreadConfig.TRAIL_PARTICLE_LIMIT.get(), mode == Mode.RETURNING);
-        drawing.path(tail, trail.currentStartDistance(), 0);
-        List<BreadcrumbTrail.Segment> segments = trail.segments();
+        drawing.path(tail, path.currentStartDistance(), 0);
+        List<BreadcrumbTrail.Segment> segments = path.segments();
         for (int index = segments.size() - 1; index >= 0 && drawing.hasRoom(); index--) {
             BreadcrumbTrail.Segment segment = segments.get(index);
             List<Vec3> points = segment.samples();
@@ -391,15 +605,26 @@ public final class Waythread {
             }
             drawing.path(points, segment.startDistance(), segment.length());
         }
-        Vec3 anchor = trail.anchor();
+        Vec3 anchor = path.anchor();
         int markerDistance = anchorDisplayDistance(WaythreadConfig.ANCHOR_SEE_THROUGH.get());
-        if (anchor.distanceToSqr(position) <= markerDistance * markerDistance) {
+        if (trail.markerFor(path) == DimensionalTrail.Marker.START
+                && anchor.distanceToSqr(position) <= markerDistance * markerDistance) {
             particles.anchor(anchor);
+        }
+    }
+
+    private void discardTrail() {
+        boolean hadRoute = trail != null;
+        reset();
+        if (hadRoute) {
+            markTrailChanged();
+            saveTrail(true);
         }
     }
 
     private void reset() {
         trail = null;
+        lastPosition = null;
         mode = Mode.RECORDING;
         returnStartPointCount = 0;
         returnCompletedUntil = 0;
@@ -417,7 +642,7 @@ public final class Waythread {
         player.displayClientMessage(Component.translatable("message.waythread." + key, args), true);
     }
 
-    private enum Mode {
+    enum Mode {
         RECORDING, RETURNING, ARRIVED
     }
 }

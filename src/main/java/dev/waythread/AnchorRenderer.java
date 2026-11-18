@@ -11,6 +11,7 @@ import java.util.Locale;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FastColor;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -22,26 +23,44 @@ final class AnchorRenderer {
     private static final int SPHERE_RINGS = 8;
     private static final double MAX_DISPLAY_DISTANCE = 48.0;
     private static final float OUTLINE_SCALE = 1.16F;
+    private static final int RELAY_RING_SLICES = 24;
     private static final List<Vertex> ORB = buildOrb();
     private static final List<Vertex> CUBE = buildCube();
+    private static final List<Vertex> RELAY_RING = buildRelayRing();
 
     private AnchorRenderer() {
     }
 
     static void render(RenderLevelStageEvent event, Vec3 center, Appearance appearance, boolean seeThrough, int rgb, float time) {
+        renderMarker(event, center, appearance, seeThrough, rgb, time, false);
+    }
+
+    static void renderRelay(RenderLevelStageEvent event, Vec3 center, boolean seeThrough, int rgb, float time) {
+        renderMarker(event, center, Appearance.ORB, seeThrough, rgb, time, true);
+    }
+
+    private static void renderMarker(RenderLevelStageEvent event, Vec3 center, Appearance appearance,
+            boolean seeThrough, int rgb, float time, boolean relay) {
         Vec3 camera = event.getCamera().getPosition();
         Matrix4f transform = new Matrix4f(event.getModelViewMatrix()).translate(
                 (float) (center.x - camera.x), (float) (center.y - camera.y), (float) (center.z - camera.z));
+        Matrix4f ringTransform = relay ? new Matrix4f(transform).rotate(event.getCamera().rotation()) : null;
         if (appearance == Appearance.CUBE) {
             transform.rotateY(time * 0.037F).rotateX(0.26F).scale(0.18F);
         } else {
-            transform.scale(0.22F);
+            transform.scale(relay ? 0.135F : 0.22F);
         }
         BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
         List<Vertex> vertices = vertices(appearance);
-        drawOutline(buffer, transform, vertices, outlineColor(rgb));
+        int lightFrame = FastColor.ARGB32.lerp(0.65F, 0xFF000000 | rgb, 0xFFFFFFFF);
+        drawOutline(buffer, transform, vertices, appearance == Appearance.CUBE ? lightFrame : outlineColor(rgb));
         for (Vertex vertex : vertices) {
             buffer.addVertex(transform, vertex.x, vertex.y, vertex.z).setColor(tint(rgb, vertex.light));
+        }
+        if (ringTransform != null) {
+            for (Vertex vertex : RELAY_RING) {
+                buffer.addVertex(ringTransform, vertex.x, vertex.y, vertex.z).setColor(lightFrame);
+            }
         }
         if (seeThrough) {
             RenderSystem.disableDepthTest();
@@ -135,6 +154,28 @@ final class AnchorRenderer {
         float z = (float) (Math.sin(latitude) * Math.sin(longitude));
         float light = 0.35F + 0.65F * Math.max(0.0F, -0.35F * x + 0.78F * y + 0.52F * z);
         return new Vertex(x, y, z, light);
+    }
+
+    private static List<Vertex> buildRelayRing() {
+        List<Vertex> vertices = new ArrayList<>(RELAY_RING_SLICES * 12);
+        for (int slice = 0; slice < RELAY_RING_SLICES; slice++) {
+            Vertex inner = ringVertex(slice, 0.184F);
+            Vertex outer = ringVertex(slice, 0.213F);
+            Vertex nextInner = ringVertex(slice + 1, 0.184F);
+            Vertex nextOuter = ringVertex(slice + 1, 0.213F);
+            addRingTriangle(vertices, outer, nextOuter, inner);
+            addRingTriangle(vertices, inner, nextOuter, nextInner);
+        }
+        return List.copyOf(vertices);
+    }
+
+    private static Vertex ringVertex(int slice, float radius) {
+        double angle = slice * Math.TAU / RELAY_RING_SLICES;
+        return new Vertex((float) Math.cos(angle) * radius, (float) Math.sin(angle) * radius, 0, 1);
+    }
+
+    private static void addRingTriangle(List<Vertex> vertices, Vertex a, Vertex b, Vertex c) {
+        vertices.addAll(List.of(a, b, c, a, c, b));
     }
 
     private static List<Vertex> buildCube() {

@@ -27,14 +27,14 @@ BiFang Tools is a client-side Minecraft mod by BiFang that adds practical tools 
 
 | Tool | What it does |
 | --- | --- |
-| Waythread | Record your route and follow a particle trail back to the start. |
+| Waythread | Record your route and follow it back to the start, including across dimensions. |
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
-| **J** (tap) | Mark the start and begin recording your route. |
-| **K** | Switch between recording and return mode. |
+| **J** (tap) | Mark the start and begin recording. While waiting to rejoin, start a new segment. |
+| **K** | Switch between recording and return mode. If return mode is waiting, rejoin the trail. |
 | **J** (hold for 2 seconds) | Clear the trail. |
 | **Ctrl+J** | Show or hide trail particles. |
 

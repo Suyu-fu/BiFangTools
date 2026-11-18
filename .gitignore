@@ -3,5 +3,6 @@
 build/
 run/
 /logs/
+/docs/
 .idea/
 *.iml
