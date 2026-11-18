@@ -13,19 +13,16 @@
 <p align="center"><strong>Minecraft Java 版 1.21.1 · NeoForge · 客户端</strong></p>
 
 <p align="center">
-  <a href="#安装">安装</a> ·
   <a href="#快捷键">快捷键</a> ·
   <a href="#配置">配置</a> ·
   <a href="https://github.com/Suyu-fu/BiFangTools/issues">问题反馈</a>
 </p>
 
-## 引路丝
+## 工具
 
-引路丝（Waythread）记录你走过的路线，用粒子指引你原路返回。可以选择轨迹线或路标点、调整起点外观，并在返程时查看进度。
-
-## 安装
-
-从源码[构建安装包](#构建)，再将 `build/libs/bifang-tools-0.5.3.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
+| 工具 | 功能 |
+| --- | --- |
+| 引路丝（Waythread） | 记录走过的路线，沿粒子指引原路返回。 |
 
 ## 快捷键
 

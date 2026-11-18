@@ -13,19 +13,16 @@
 <p align="center"><strong>Minecraft Java Edition 1.21.1 · NeoForge · Client-side</strong></p>
 
 <p align="center">
-  <a href="#installation">Install</a> ·
   <a href="#controls">Controls</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="https://github.com/Suyu-fu/BiFangTools/issues">Report an issue</a>
 </p>
 
-## Waythread
+## Tools
 
-Record the route you travel and follow a particle trail back to where you started. Choose a trail line or waypoints, customize the start marker, and see your progress on the way back.
-
-## Installation
-
-[Build the mod from source](#building), then place `build/libs/bifang-tools-0.5.3.jar` in your client's `mods` folder. When upgrading, remove the previous JAR from `mods` first.
+| Tool | What it does |
+| --- | --- |
+| Waythread | Record your route and follow a particle trail back to the start. |
 
 ## Controls
 
