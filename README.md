@@ -1,67 +1,99 @@
-# 哔方的妙妙工具 · BiFang Tools
+<p align="center">
+  <a href="README.zh-CN.md">简体中文</a> · <strong>English</strong>
+</p>
 
-**简体中文** · [English](README.en.md)
+<p align="center">
+  <img src="artwork/bifangs-bag-of-curiosities-comic.png" alt="Chibi BiFang rummaging through a satchel" width="224">
+</p>
 
-<img src="artwork/bifangs-bag-of-curiosities-comic.png" alt="Q 版 BiFang 正在翻找小包" width="256">
+<h1 align="center">BiFang Tools</h1>
 
-Little tools for everyday Minecraft.
+<p align="center">A Minecraft mod by BiFang that adds a variety of fun and handy tools.</p>
 
-Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
+<p align="center"><strong>Minecraft Java Edition 1.21.1 · NeoForge · Client-side</strong></p>
 
-界面支持简体中文、繁體中文（台灣）、English (US)、日本語、한국어、Español（España / México）和 Português (Brasil)。在 Minecraft 的「选项 → 语言」切换。
+<p align="center">
+  <a href="#installation">Install</a> ·
+  <a href="#controls">Controls</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="https://github.com/Suyu-fu/BiFangTools/issues">Report an issue</a>
+</p>
 
-作者 **BiFang**。模组 ID 为 `bifangs_bag_of_curiosities`。
+## Waythread
 
-模组代码采用 MIT 许可证，允许商用、修改和再分发，分发时须保留版权与许可声明。[代码许可证](LICENSE)
+Record the route you travel and follow a particle trail back to where you started. Choose a trail line or waypoints, customize the start marker, and see your progress on the way back.
 
-BiFang 封面等原创图像采用 CC BY-NC-SA 4.0，允许署名后非商业分享和改编。发布改编图像时须标明改动并沿用相同许可。分享包含这些图像的模组包时，也须遵守素材许可。[素材许可证](LICENSE-ASSETS)
+## Installation
 
-## 安装
+[Build the mod from source](#building), then place `build/libs/bifang-tools-0.5.3.jar` in your client's `mods` folder. When upgrading, remove the previous JAR from `mods` first.
 
-将 `build/libs/bifang-tools-0.5.3.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
+## Controls
 
-## 引路丝（Waythread）
+| Key | Action |
+| --- | --- |
+| **J** (tap) | Mark the start and begin recording your route. |
+| **K** | Switch between recording and return mode. |
+| **J** (hold for 2 seconds) | Clear the trail. |
+| **Ctrl+J** | Show or hide trail particles. |
 
-记录走过的路线，沿粒子原路返回。灵感来自 [AtomicStryker 的 Magic Yarn](https://github.com/AtomicStryker/atomicstrykers-minecraft-mods/tree/1.7.10/MagicYarn)。
+You can still record and retrace a route while the particles are hidden. The trail is visible by default after a client restart. Rebind the shortcuts under **Options → Controls → Key Binds**.
 
-1. 短按 **J** 标记起点，走过的位置会留下轨迹线或路标点。
-2. 按 **K** 切换返程。亮点沿线朝起点移动。走近任意记录点时，路线会截断到消除范围内最近的记录点。再按 **K** 恢复记录时，接入你从最近接回处实际走过的路。短接不通或遇到传送时会保留断点。
-3. 长按 **J** 两秒清除路线。
-4. 按 **Ctrl+J** 切换路线粒子的显示。隐藏时仍可记路和返程，重新启动客户端后默认显示。可在「选项 → 控制 → 按键绑定」更改按键。
+<details>
+<summary>How recording and return mode work</summary>
 
-模组沿实际移动的路线采样，默认每 5 格记录一个点，明显转折处会提前留点并封段。轨迹线模式下，玩家靠近后，A* 才在路段两个端点之间、采样轨迹附近尝试生成可步行的粒子路线。未找到可步行路线时，粒子会沿采样点连线显示。传送前后分别记录。路线在退出世界、切换维度或重生后清除。
+In return mode, a moving highlight points toward the start. When you get close to a recorded point, the trail is trimmed back to the nearest point within the configured range. Press **K** again to resume recording and attach the route you actually walked from the last point you rejoined. If a short connection is blocked or a teleport occurred, the trail stays split.
 
-## 配置
+Waythread samples the route you actually travel. It records a point every five blocks by default, and marks sharp turns sooner to end the current segment. In Trail Line mode, A* searches for a walkable route between each nearby segment's endpoints, close to the recorded samples. If it cannot find one, the particles connect the sampled points directly. Teleporting starts a separate segment. Trails are cleared when you leave the world, change dimensions, or respawn.
 
-在主菜单打开「模组 → BiFang Tools → 配置 → 引路丝」，也可以编辑游戏目录中的 `config/waythread-client.toml`。
+</details>
 
-界面分为「路线」「起点」「记录与返程」。常用的显示距离、粒子间距和数量上限在「路线」页相邻排列。
+## Configuration
 
-| 设置 | 默认值 | 说明 |
+From the main menu, open **Mods → BiFang Tools → Config → Waythread**, or edit `config/waythread-client.toml` in your Minecraft directory.
+
+The interface has three tabs, **Trail**, **Start Marker**, and **Record & Return**. Display distance, particle spacing, and the particle limit are grouped together on the **Trail** tab.
+
+The in-game interface supports Simplified Chinese, Traditional Chinese (Taiwan), English (US), Japanese, Korean, Spanish (Spain and Mexico), and Brazilian Portuguese. Switch languages in Minecraft under **Options → Language**.
+
+<details>
+<summary>Full configuration reference</summary>
+
+| Setting | Default | Description |
 | --- | --- | --- |
-| `loadDistance` | 18 格 | 在玩家周围多远开始生成并显示路段粒子。可设 4–64 格。 |
-| `recordPointSpacing` | 5 格 | 沿实际轨迹累计移动多远后记录下一个位置。可设 2–10 格，旧配置超出范围时自动调整到最近的边界。 |
-| `maxRecordedPoints` | 20,000 点 | 起点计入，路段共用的端点只计一次。达到上限时暂停新增记录并提示一次。可设 2–200,000 点。调低上限时保留当前路线，直到返程消点或手动清除。 |
-| `returnEraseDistance` | 2 格 | 返程时匹配这个距离内最近的记录点，截去它之后的路线。匹配到起点时结束返程。可设 0.5–6 格。 |
-| `displayMode` | 轨迹线 | `LINE` 显示连线，`WAYPOINTS` 只标记记录点。两者都支持起点和移动的指路亮点。 |
-| `particleStyle` | 细尘 | 路线粒子可选细尘（`DUST`）、电火花（`SPARK`）、荧光（`GLOW`）和薄雾（`MIST`）。起点选用粒子外观时也使用这个样式。 |
-| `trailParticleSpacing` | 0.5 格 | 轨迹线粒子的间距，可设 0.1–2 格。 |
-| `trailParticleLimit` | 90 个 | 每次刷新最多绘制的路线粒子数，可设 1–2,048 个。滑块最右侧是「无上限」，对应配置值 `0`。 |
-| `trailColor` | `#38E3FF` | 路线与方向亮点的颜色，使用 `#RRGGBB` 格式。 |
-| `anchorFollowsTrailColor` | 开启 | 起点标记与路线使用相同的颜色。 |
-| `anchorColor` | `#FFB036` | 关闭颜色同步时使用的起点颜色，格式为 `#RRGGBB`。 |
-| `anchorAppearance` | 粒子 | 起点可选粒子（`PARTICLES`）、浮空球（`ORB`）和浮空立方体（`CUBE`）。浮空模型带细描边。 |
-| `anchorSeeThrough` | 关闭 | 隔着方块显示起点标记本身。 |
-| `anchorSeeThroughDistance` | 512 格 | 开启起点透视时使用的起点显示距离，可设 4–4,096 格。路线仍使用自己的加载距离。远处的起点标记会保留可辨识的大小。 |
-| `showRecordingDirection` | 开启 | 记路时显示朝路线末端移动的亮点。 |
-| `showReturnProgress` | 开启 | 返程时显示进度条。 |
-| `showReturnPercentage` | 开启 | 显示本次返程已消除的记录点比例。 |
-| `returnProgressFontSize` | 7 px | 返程百分比的文字大小，可设 5–16 个游戏界面像素，随 Minecraft 界面缩放。 |
-| `showArrivalMessage` | 开启 | 返程到达起点时提示「到达起点」，并播放一声经验球音效。 |
-| `clearOnArrival` | 开启 | 返程结束后清除起点标记。关闭后保留起点标记，短按 J 可以从当前位置重新记路。 |
+| `loadDistance` | 18 blocks | How far from the player to generate and display trail particles. Range 4–64 blocks. |
+| `recordPointSpacing` | 5 blocks | Distance traveled along the route before recording the next point. Range 2–10 blocks. Older settings outside this range are adjusted to the nearest bound. |
+| `maxRecordedPoints` | 20,000 points | Includes the starting point and counts shared endpoints once. On reaching the limit, the mod pauses recording and alerts you once. Range 2–200,000 points. Lowering the limit keeps the current trail until you trim or clear it. |
+| `returnEraseDistance` | 2 blocks | During the return trip, trim the trail back to the nearest recorded point within this range. Reaching the start ends the return trip. Range 0.5–6 blocks. |
+| `displayMode` | Trail Line | `LINE` connects the trail. `WAYPOINTS` marks only recorded points. Both show the start marker and support the moving direction highlight. |
+| `particleStyle` | Fine Dust | Choose Fine Dust (`DUST`), Electric Sparks (`SPARK`), Glow (`GLOW`), or Mist (`MIST`). The Particles start marker uses the same style. |
+| `trailParticleSpacing` | 0.5 blocks | Distance between particles along the trail line. Range 0.1–2 blocks. |
+| `trailParticleLimit` | 90 particles | Maximum trail particles per refresh. Range 1–2,048. Slide all the way right for Unlimited, which is stored as `0`. |
+| `trailColor` | `#38E3FF` | Color of the trail and direction highlight in `#RRGGBB` format. |
+| `anchorFollowsTrailColor` | On | Use the trail color for the start marker. |
+| `anchorColor` | `#FFB036` | Start marker color when color matching is off. Use `#RRGGBB` format. |
+| `anchorAppearance` | Particles | Choose Particles (`PARTICLES`), Floating Orb (`ORB`), or Floating Cube (`CUBE`). The floating shapes have a thin outline. |
+| `anchorSeeThrough` | Off | Show the start marker through blocks. |
+| `anchorSeeThroughDistance` | 512 blocks | Start marker display range when see-through is on. Range 4–4,096 blocks. The trail uses its own display distance. The marker stays recognizable at long distances. |
+| `showRecordingDirection` | On | While recording, show a moving highlight that points toward the end of the trail. |
+| `showReturnProgress` | On | Show a progress bar during the return trip. |
+| `showReturnPercentage` | On | Show the percentage of recorded points cleared on the current return trip. |
+| `returnProgressFontSize` | 7 px | Return percentage text size. Range 5–16 GUI pixels and follows Minecraft's GUI scale. |
+| `showArrivalMessage` | On | Show an arrival message and play the experience orb sound when you get back to the start. |
+| `clearOnArrival` | On | Clear the start marker at the end of the return trip. With this off, the marker stays visible. Tap **J** to start recording from your current position. |
 
-## 构建
+</details>
 
-使用 JDK 21，在项目根目录运行 `.\gradlew.bat build`（Windows）或 `./gradlew build`。用 `runClient` 启动开发客户端。
+## Building
 
-版本和未发布改动见 [开发日志](DEVLOG.md)。
+Use JDK 21. From the project root, run `.\gradlew.bat build` on Windows or `./gradlew build` on other platforms. Use the `runClient` task to launch a development client.
+
+See the [development log (Chinese)](DEVLOG.md) for version history and unreleased changes.
+
+## Credits
+
+Created by **BiFang**. Waythread was inspired by [AtomicStryker's Magic Yarn](https://github.com/AtomicStryker/atomicstrykers-minecraft-mods/tree/1.7.10/MagicYarn). The mod ID is `bifangs_bag_of_curiosities`.
+
+## License
+
+- The code is licensed under MIT. You may use, modify, and redistribute it, including for commercial purposes. Keep the copyright and license notices with redistributed copies. [Code license](LICENSE)
+- The cover and mod icon are licensed under CC BY-NC-SA 4.0. You may share and adapt them for noncommercial purposes with attribution. If you share adapted artwork, indicate your changes and use the same license. Copies of the mod that include the artwork are also subject to the artwork license. [Artwork license](LICENSE-ASSETS)
