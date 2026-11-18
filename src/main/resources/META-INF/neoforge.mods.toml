@@ -1,21 +1,24 @@
 modLoader = "javafml"
 loaderVersion = "[4,)"
-license = "All Rights Reserved"
+license = "MIT (code) / CC BY-NC-SA 4.0 (artwork)"
 
 [[mods]]
-modId = "waythread"
+modId = "${modId}"
 version = "${modVersion}"
-displayName = "BiFang's Bag of Curiosities"
+displayName = "BiFang Tools"
+authors = "BiFang"
+logoFile = "bifangs-bag-of-curiosities-logo.png"
+logoBlur = true
 description = "Little tools for everyday Minecraft."
 
-[[dependencies.waythread]]
+[[dependencies.${modId}]]
 modId = "neoforge"
 type = "required"
 versionRange = "[21.1,)"
 ordering = "NONE"
 side = "CLIENT"
 
-[[dependencies.waythread]]
+[[dependencies.${modId}]]
 modId = "minecraft"
 type = "required"
 versionRange = "[1.21.1]"

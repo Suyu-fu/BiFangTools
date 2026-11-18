@@ -5,6 +5,7 @@ plugins {
 
 group = 'dev.waythread'
 version = '0.5.3'
+def modId = 'bifangs_bag_of_curiosities'
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 neoForge {
@@ -15,7 +16,7 @@ neoForge {
     }
 
     mods {
-        waythread { sourceSet sourceSets.main }
+        register(modId) { sourceSet sourceSets.main }
     }
 }
 
@@ -24,8 +25,10 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 tasks.processResources {
+    inputs.property('modId', modId)
     inputs.property('modVersion', project.version)
+    from('LICENSE', 'LICENSE-ASSETS')
     filesMatching('META-INF/neoforge.mods.toml') {
-        expand(modVersion: project.version)
+        expand(modId: modId, modVersion: project.version)
     }
 }

@@ -26,7 +26,8 @@ final class WaythreadConfig {
     static final ModConfigSpec.BooleanValue ANCHOR_SEE_THROUGH;
     static final ModConfigSpec.IntValue ANCHOR_SEE_THROUGH_DISTANCE;
     static final ModConfigSpec.BooleanValue SHOW_RECORDING_DIRECTION;
-    static final ModConfigSpec.BooleanValue SHOW_RETURN_PROGRESS;
+    static final ModConfigSpec.BooleanValue SHOW_RETURN_PROGRESS_BAR;
+    static final ModConfigSpec.BooleanValue SHOW_RETURN_PERCENTAGE;
     static final ModConfigSpec.IntValue RETURN_PROGRESS_FONT_SIZE;
     static final ModConfigSpec.BooleanValue SHOW_ARRIVAL_MESSAGE;
     static final ModConfigSpec.BooleanValue CLEAR_ON_ARRIVAL;
@@ -93,10 +94,14 @@ final class WaythreadConfig {
                 .comment("Show a moving highlight toward the end of the trail while recording.")
                 .translation("waythread.configuration.showRecordingDirection")
                 .define("showRecordingDirection", true);
-        SHOW_RETURN_PROGRESS = builder
-                .comment("Show return progress as a percentage of the points cleared since switching to return mode.")
+        SHOW_RETURN_PROGRESS_BAR = builder
+                .comment("Show a progress bar while returning to the start.")
                 .translation("waythread.configuration.showReturnProgress")
                 .define("showReturnProgress", true);
+        SHOW_RETURN_PERCENTAGE = builder
+                .comment("Show the percentage of points cleared since switching to return mode.")
+                .translation("waythread.configuration.showReturnPercentage")
+                .define("showReturnPercentage", true);
         RETURN_PROGRESS_FONT_SIZE = builder
                 .comment("Height of the return progress label in GUI pixels.")
                 .translation("waythread.configuration.returnProgressFontSize")

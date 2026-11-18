@@ -1,12 +1,24 @@
-# 哔方的妙妙工具 · BiFang's Bag of Curiosities (BBC)
+# 哔方的妙妙工具 · BiFang Tools
+
+**简体中文** · [English](README.en.md)
+
+<img src="artwork/bifangs-bag-of-curiosities-comic.png" alt="Q 版 BiFang 正在翻找小包" width="256">
 
 Little tools for everyday Minecraft.
 
 Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 
+界面支持简体中文、繁體中文（台灣）、English (US)、日本語、한국어、Español（España / México）和 Português (Brasil)。在 Minecraft 的「选项 → 语言」切换。
+
+作者 **BiFang**。模组 ID 为 `bifangs_bag_of_curiosities`。
+
+模组代码采用 MIT 许可证，允许商用、修改和再分发，分发时须保留版权与许可声明。[代码许可证](LICENSE)
+
+BiFang 封面等原创图像采用 CC BY-NC-SA 4.0，允许署名后非商业分享和改编。发布改编图像时须标明改动并沿用相同许可。分享包含这些图像的模组包时，也须遵守素材许可。[素材许可证](LICENSE-ASSETS)
+
 ## 安装
 
-将 `build/libs/bifangs-bag-of-curiosities-0.5.3.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
+将 `build/libs/bifang-tools-0.5.3.jar` 放进客户端的 `mods` 目录。升级时先从 `mods` 移除旧版。
 
 ## 引路丝（Waythread）
 
@@ -21,9 +33,9 @@ Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 
 ## 配置
 
-在主菜单打开「模组 → BiFang's Bag of Curiosities → 配置 → 引路丝」，也可以编辑游戏目录中的 `config/waythread-client.toml`。
+在主菜单打开「模组 → BiFang Tools → 配置 → 引路丝」，也可以编辑游戏目录中的 `config/waythread-client.toml`。
 
-界面支持简体中文和英语（美国），在 Minecraft 的「选项 → 语言」切换。
+界面分为「路线」「起点」「记录与返程」。常用的显示距离、粒子间距和数量上限在「路线」页相邻排列。
 
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -42,9 +54,10 @@ Minecraft Java 版 **1.21.1** 的 NeoForge 客户端模组。
 | `anchorSeeThrough` | 关闭 | 隔着方块显示起点标记本身。 |
 | `anchorSeeThroughDistance` | 512 格 | 开启起点透视时使用的起点显示距离，可设 4–4,096 格。路线仍使用自己的加载距离。远处的起点标记会保留可辨识的大小。 |
 | `showRecordingDirection` | 开启 | 记路时显示朝路线末端移动的亮点。 |
-| `showReturnProgress` | 开启 | 返程时显示进度条和百分比，以进入返程时的记录点数为基准。 |
-| `returnProgressFontSize` | 7 px | 进度条上方的文字大小，可设 5–16 个游戏界面像素，随 Minecraft 界面缩放。 |
-| `showArrivalMessage` | 开启 | 返程到达起点时提示「已到达起点」，并播放一声经验球音效。 |
+| `showReturnProgress` | 开启 | 返程时显示进度条。 |
+| `showReturnPercentage` | 开启 | 显示本次返程已消除的记录点比例。 |
+| `returnProgressFontSize` | 7 px | 返程百分比的文字大小，可设 5–16 个游戏界面像素，随 Minecraft 界面缩放。 |
+| `showArrivalMessage` | 开启 | 返程到达起点时提示「到达起点」，并播放一声经验球音效。 |
 | `clearOnArrival` | 开启 | 返程结束后清除起点标记。关闭后保留起点标记，短按 J 可以从当前位置重新记路。 |
 
 ## 构建

@@ -255,7 +255,7 @@ final class BreadcrumbTrail {
                 : movement.segments.getFirst().startIndex();
         int startIndex = currentStartIsRetained() ? currentStartIndex : currentStartIndex - firstMovementIndex;
         for (Segment segment : movement.segments) {
-            segments.add(new Segment(segments.size(), startIndex + segment.startIndex(), segment.samples()));
+            addSegment(startIndex + segment.startIndex(), segment.samples(), segment.length());
         }
         currentStartIndex = startIndex + movement.currentStartIndex;
         current.clear();
@@ -283,13 +283,39 @@ final class BreadcrumbTrail {
 
     private void finishSegment() {
         if (current.size() > 1) {
-            segments.add(new Segment(segments.size(), currentStartIndex, List.copyOf(current)));
+            addSegment(currentStartIndex, List.copyOf(current), pathLength(current));
             currentStartIndex += current.size() - 1;
         }
         Vec3 end = current.getLast();
         current.clear();
         current.add(end);
         segmentLength = 0;
+    }
+
+    private void addSegment(int startIndex, List<Vec3> samples, double length) {
+        segments.add(new Segment(segments.size(), startIndex, samples, startDistanceAt(startIndex), length));
+    }
+
+    private double startDistanceAt(int startIndex) {
+        if (!segments.isEmpty()) {
+            Segment previous = segments.getLast();
+            if (previous.endIndex() == startIndex) {
+                return previous.startDistance() + previous.length();
+            }
+        }
+        return 0;
+    }
+
+    double currentStartDistance() {
+        return startDistanceAt(currentStartIndex);
+    }
+
+    static double pathLength(List<Vec3> points) {
+        double length = 0;
+        for (int i = 1; i < points.size(); i++) {
+            length += points.get(i - 1).distanceTo(points.get(i));
+        }
+        return length;
     }
 
     int pointCount() {
@@ -345,7 +371,7 @@ final class BreadcrumbTrail {
         UNCHANGED, TRUNCATED, ARRIVED
     }
 
-    record Segment(int index, int startIndex, List<Vec3> samples) {
+    record Segment(int index, int startIndex, List<Vec3> samples, double startDistance, double length) {
         int endIndex() {
             return startIndex + samples.size() - 1;
         }

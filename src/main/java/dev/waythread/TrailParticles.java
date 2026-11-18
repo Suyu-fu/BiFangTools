@@ -83,6 +83,7 @@ final class TrailParticles {
     }
 
     static final class TrailDraw {
+        private static final double DISTANCE_EPSILON = 1.0e-8;
         private final Vec3 player;
         private final double rangeSquared;
         private final double spacing;
@@ -91,8 +92,6 @@ final class TrailParticles {
         private final int gridScale;
         private final Consumer<Vec3> spawn;
         private final Set<BlockPos> drawn = new HashSet<>();
-        private Vec3 previousStart;
-        private double distanceToNext;
 
         TrailDraw(Vec3 player, double rangeSquared, double spacing, int limit, DisplayMode mode, Consumer<Vec3> spawn) {
             this.player = player;
@@ -108,7 +107,7 @@ final class TrailParticles {
             return limit == 0 || drawn.size() < limit;
         }
 
-        void path(List<Vec3> points) {
+        void path(List<Vec3> points, double startDistance, double recordedLength) {
             if (points.isEmpty() || !hasRoom()) {
                 return;
             }
@@ -119,24 +118,34 @@ final class TrailParticles {
                 return;
             }
 
-            Vec3 end = points.getLast();
-            if (!end.equals(previousStart)) {
-                draw(end);
-                distanceToNext = spacing;
+            double displayLength = BreadcrumbTrail.pathLength(points);
+            double lineLength = recordedLength > 0 ? recordedLength : displayLength;
+            double endDistance = startDistance + lineLength;
+            double sampleDistance = Math.floor((endDistance + DISTANCE_EPSILON) / spacing) * spacing;
+            if (sampleDistance < startDistance - DISTANCE_EPSILON) {
+                return;
             }
+            Vec3 end = points.getLast();
+            if (lineLength == 0 || displayLength == 0) {
+                draw(end);
+                return;
+            }
+            // A* may change the displayed line length. Keep the sampling phase on the recorded route.
+            double distanceScale = displayLength / lineLength;
+            double step = spacing * distanceScale;
+            double distanceToNext = Math.max(0, endDistance - sampleDistance) * distanceScale;
             for (int i = points.size() - 2; i >= 0 && hasRoom(); i--) {
                 Vec3 start = points.get(i);
                 double length = end.distanceTo(start);
                 if (length > 0) {
-                    while (distanceToNext <= length && hasRoom()) {
-                        draw(end.lerp(start, distanceToNext / length));
-                        distanceToNext += spacing;
+                    while (distanceToNext <= length + DISTANCE_EPSILON && hasRoom()) {
+                        draw(end.lerp(start, Math.min(distanceToNext / length, 1.0)));
+                        distanceToNext += step;
                     }
                     distanceToNext -= length;
                 }
                 end = start;
             }
-            previousStart = end;
         }
 
         private void draw(Vec3 point) {
@@ -209,10 +218,7 @@ final class TrailParticles {
     }
 
     static Vec3 pulsePosition(List<Vec3> path, int tick) {
-        double length = 0;
-        for (int i = 1; i < path.size(); i++) {
-            length += path.get(i - 1).distanceTo(path.get(i));
-        }
+        double length = BreadcrumbTrail.pathLength(path);
         if (length < 0.2) {
             return null;
         }

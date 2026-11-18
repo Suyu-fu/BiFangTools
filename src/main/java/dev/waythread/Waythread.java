@@ -35,10 +35,11 @@ import net.neoforged.neoforge.client.settings.KeyModifier;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
-@Mod(value = "waythread", dist = Dist.CLIENT)
+@Mod(value = Waythread.MOD_ID, dist = Dist.CLIENT)
 public final class Waythread {
+    static final String MOD_ID = "bifangs_bag_of_curiosities";
     private static final String CATEGORY = "key.categories.waythread";
-    private static final ResourceLocation RETURN_PROGRESS_LAYER = ResourceLocation.fromNamespaceAndPath("waythread", "return_progress");
+    private static final ResourceLocation RETURN_PROGRESS_LAYER = ResourceLocation.fromNamespaceAndPath(MOD_ID, "return_progress");
     private static final int CACHE_MARGIN = 6;
     private static final long CLEAR_HOLD_MS = 2_000;
     private static final int COMPLETED_PROGRESS_TICKS = 30;
@@ -67,7 +68,7 @@ public final class Waythread {
     private int returnCompletedUntil;
 
     public Waythread(IEventBus modBus, ModContainer container) {
-        container.registerConfig(ModConfig.Type.CLIENT, WaythreadConfig.SPEC);
+        container.registerConfig(ModConfig.Type.CLIENT, WaythreadConfig.SPEC, "waythread-client.toml");
         container.registerExtensionPoint(IConfigScreenFactory.class, (mod, parent) ->
                 new ConfigurationScreen(mod, parent, TrailConfigurationScreen::new));
         modBus.addListener(this::registerKeys);
@@ -91,7 +92,12 @@ public final class Waythread {
             return;
         }
         boolean returning = mode == Mode.RETURNING && trail != null && returnStartPointCount > 0;
-        if ((!returning && player.tickCount >= returnCompletedUntil) || !WaythreadConfig.SHOW_RETURN_PROGRESS.get()) {
+        if (!returning && player.tickCount >= returnCompletedUntil) {
+            return;
+        }
+        boolean showBar = WaythreadConfig.SHOW_RETURN_PROGRESS_BAR.get();
+        boolean showPercentage = WaythreadConfig.SHOW_RETURN_PERCENTAGE.get();
+        if (!showBar && !showPercentage) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
@@ -102,12 +108,17 @@ public final class Waythread {
         int percent = returning ? returnProgressPercent(returnStartPointCount, trail.pointCount()) : 100;
         int center = graphics.guiWidth() / 2;
         int y = graphics.guiHeight() - 82;
-        int width = 88;
-        int left = center - width / 2;
-        graphics.fill(left, y, left + width, y + 1, 0xB019232B);
-        int filled = width * percent / 100;
-        if (filled > 0) {
-            graphics.fill(left, y, left + filled, y + 1, 0xFF6BE4F4);
+        if (showBar) {
+            int width = 88;
+            int left = center - width / 2;
+            graphics.fill(left, y, left + width, y + 1, 0xB019232B);
+            int filled = width * percent / 100;
+            if (filled > 0) {
+                graphics.fill(left, y, left + filled, y + 1, 0xFF6BE4F4);
+            }
+        }
+        if (!showPercentage) {
+            return;
         }
         int fontSize = WaythreadConfig.RETURN_PROGRESS_FONT_SIZE.get();
         float textScale = (float) fontSize / minecraft.font.lineHeight;
@@ -361,7 +372,7 @@ public final class Waythread {
         particles.prune();
         TrailParticles.TrailDraw drawing = particles.startTrail(position, rangeSquared,
                 WaythreadConfig.TRAIL_PARTICLE_SPACING.get(), WaythreadConfig.TRAIL_PARTICLE_LIMIT.get(), mode == Mode.RETURNING);
-        drawing.path(tail);
+        drawing.path(tail, trail.currentStartDistance(), 0);
         List<BreadcrumbTrail.Segment> segments = trail.segments();
         for (int index = segments.size() - 1; index >= 0 && drawing.hasRoom(); index--) {
             BreadcrumbTrail.Segment segment = segments.get(index);
@@ -378,7 +389,7 @@ public final class Waythread {
                     search = new RouteSearch(new WalkableTerrain(level), segment);
                 }
             }
-            drawing.path(points);
+            drawing.path(points, segment.startDistance(), segment.length());
         }
         Vec3 anchor = trail.anchor();
         int markerDistance = anchorDisplayDistance(WaythreadConfig.ANCHOR_SEE_THROUGH.get());
