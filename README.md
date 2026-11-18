@@ -17,6 +17,7 @@
 <p align="center">
   <a href="#controls">Controls</a> ·
   <a href="#configuration">Configuration</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
   <a href="https://github.com/Suyu-fu/BiFangTools/issues">Report an issue</a>
 </p>
 
@@ -38,15 +39,6 @@ BiFang Tools is a client-side Minecraft mod by BiFang that adds practical tools 
 | **Ctrl+J** | Show or hide trail particles. |
 
 You can still record and retrace a route while the particles are hidden. The trail is visible by default after a client restart. Rebind the shortcuts under **Options → Controls → Key Binds**.
-
-<details>
-<summary>How recording and return mode work</summary>
-
-In return mode, a moving highlight points toward the start. When you get close to a recorded point, the trail is trimmed back to the nearest point within the configured range. Press **K** again to resume recording and attach the route you actually walked from the last point you rejoined. If a short connection is blocked or a teleport occurred, the trail stays split.
-
-Waythread samples the route you actually travel. It records a point every five blocks by default, and marks sharp turns sooner to end the current segment. In Trail Line mode, A* searches for a walkable route between each nearby segment's endpoints, close to the recorded samples. If it cannot find one, the particles connect the sampled points directly. Teleporting starts a separate segment. Trails are cleared when you leave the world, change dimensions, or respawn.
-
-</details>
 
 ## Configuration
 
@@ -83,12 +75,6 @@ The in-game interface supports Simplified Chinese, Traditional Chinese (Taiwan),
 | `clearOnArrival` | On | Clear the start marker at the end of the return trip. With this off, the marker stays visible. Tap **J** to start recording from your current position. |
 
 </details>
-
-## Building
-
-Use JDK 21. From the project root, run `.\gradlew.bat build` on Windows or `./gradlew build` on other platforms. Use the `runClient` task to launch a development client.
-
-See the [development log (Chinese)](DEVLOG.md) for version history and unreleased changes.
 
 ## Credits
 
