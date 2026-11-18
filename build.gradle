@@ -4,8 +4,9 @@ plugins {
 }
 
 group = 'dev.waythread'
-version = '0.5.3'
+version = '0.5.5'
 def modId = 'bifangs_bag_of_curiosities'
+def minecraftVersion = '1.21.1'
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 neoForge {
@@ -24,11 +25,17 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+tasks.named('jar', Jar) {
+    archiveBaseName = 'bifangtools'
+    archiveClassifier = "neoforge-mc${minecraftVersion}"
+}
+
 tasks.processResources {
     inputs.property('modId', modId)
     inputs.property('modVersion', project.version)
+    inputs.property('minecraftVersion', minecraftVersion)
     from('LICENSE', 'LICENSE-ASSETS')
     filesMatching('META-INF/neoforge.mods.toml') {
-        expand(modId: modId, modVersion: project.version)
+        expand(modId: modId, modVersion: project.version, minecraftVersion: minecraftVersion)
     }
 }

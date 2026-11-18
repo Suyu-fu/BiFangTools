@@ -37,7 +37,7 @@ final class WaythreadConfig {
         LOAD_DISTANCE = builder
                 .comment("Distance in blocks from the player at which nearby trail segments are generated and displayed.")
                 .translation("waythread.configuration.loadDistance")
-                .defineInRange("loadDistance", 18, 4, 64);
+                .defineInRange("loadDistance", 40, 4, 64);
         RECORD_POINT_SPACING = builder
                 .comment("Travel distance in blocks before recording another position.")
                 .translation("waythread.configuration.recordPointSpacing")
@@ -45,11 +45,11 @@ final class WaythreadConfig {
         MAX_RECORDED_POINTS = builder
                 .comment("Maximum number of recorded points, including the starting point.")
                 .translation("waythread.configuration.maxRecordedPoints")
-                .defineInRange("maxRecordedPoints", 20_000, 2, 200_000);
+                .defineInRange("maxRecordedPoints", 8_192, 1_024, 16_384);
         RETURN_ERASE_DISTANCE = builder
                 .comment("Distance in blocks for matching a recorded point and reaching the start in return mode.")
                 .translation("waythread.configuration.returnEraseDistance")
-                .defineInRange("returnEraseDistance", 2.0, 0.5, 6.0);
+                .defineInRange("returnEraseDistance", 2.0, 1.0, 16.0);
         DISPLAY_MODE = builder
                 .comment("Show a connected trail line or just the recorded waypoints.")
                 .translation("waythread.configuration.displayMode")
@@ -57,11 +57,11 @@ final class WaythreadConfig {
         PARTICLE_STYLE = builder
                 .comment("Visual preset for the trail line and start marker.")
                 .translation("waythread.configuration.particleStyle")
-                .defineEnum("particleStyle", TrailParticles.Style.DUST);
+                .defineEnum("particleStyle", TrailParticles.Style.GLOW);
         TRAIL_PARTICLE_SPACING = builder
                 .comment("Distance in blocks between particles in Trail Line mode.")
                 .translation("waythread.configuration.trailParticleSpacing")
-                .defineInRange("trailParticleSpacing", 0.50, 0.10, 2.0);
+                .defineInRange("trailParticleSpacing", 0.7, 0.1, 2.0);
         TRAIL_PARTICLE_LIMIT = builder
                 .comment("Maximum trail particles per refresh. Zero means unlimited.")
                 .translation("waythread.configuration.trailParticleLimit")
@@ -81,7 +81,7 @@ final class WaythreadConfig {
         ANCHOR_APPEARANCE = builder
                 .comment("Choose particles, a floating orb, or a floating cube for the start marker.")
                 .translation("waythread.configuration.anchorAppearance")
-                .defineEnum("anchorAppearance", AnchorRenderer.Appearance.PARTICLES);
+                .defineEnum("anchorAppearance", AnchorRenderer.Appearance.CUBE);
         ANCHOR_SEE_THROUGH = builder
                 .comment("Show the start marker itself through blocks.")
                 .translation("waythread.configuration.anchorSeeThrough")

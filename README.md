@@ -53,18 +53,18 @@ The in-game interface supports Simplified Chinese, Traditional Chinese (Taiwan),
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `loadDistance` | 18 blocks | How far from the player to generate and display trail particles. Range 4–64 blocks. |
+| `loadDistance` | 40 blocks | How far from the player to generate and display trail particles. Range 4–64 blocks. |
 | `recordPointSpacing` | 5 blocks | Distance traveled along the route before recording the next point. Range 2–10 blocks. Older settings outside this range are adjusted to the nearest bound. |
-| `maxRecordedPoints` | 20,000 points | Includes the starting point and counts shared endpoints once. On reaching the limit, the mod pauses recording and alerts you once. Range 2–200,000 points. Lowering the limit keeps the current trail until you trim or clear it. |
-| `returnEraseDistance` | 2 blocks | During the return trip, trim the trail back to the nearest recorded point within this range. Reaching the start ends the return trip. Range 0.5–6 blocks. |
+| `maxRecordedPoints` | 8,192 points | Includes the starting point and counts shared endpoints once. On reaching the limit, the mod pauses recording and alerts you once. Range 1,024–16,384 points. Lowering the limit keeps the current trail until you trim or clear it. |
+| `returnEraseDistance` | 2 blocks | During the return trip, trim the trail back to the nearest recorded point within this range. Reaching the start ends the return trip. Range 1–16 blocks. |
 | `displayMode` | Trail Line | `LINE` connects the trail. `WAYPOINTS` marks only recorded points. Both show the start marker and support the moving direction highlight. |
-| `particleStyle` | Fine Dust | Choose Fine Dust (`DUST`), Electric Sparks (`SPARK`), Glow (`GLOW`), or Mist (`MIST`). The Particles start marker uses the same style. |
-| `trailParticleSpacing` | 0.5 blocks | Distance between particles along the trail line. Range 0.1–2 blocks. |
+| `particleStyle` | Glow | Choose Fine Dust (`DUST`), Electric Sparks (`SPARK`), Glow (`GLOW`), or Mist (`MIST`). The Particles start marker uses the same style. |
+| `trailParticleSpacing` | 0.7 blocks | Distance between particles along the trail line. Range 0.1–2 blocks. |
 | `trailParticleLimit` | 90 particles | Maximum trail particles per refresh. Range 1–2,048. Slide all the way right for Unlimited, which is stored as `0`. |
 | `trailColor` | `#38E3FF` | Color of the trail and direction highlight in `#RRGGBB` format. |
 | `anchorFollowsTrailColor` | On | Use the trail color for the start marker. |
 | `anchorColor` | `#FFB036` | Start marker color when color matching is off. Use `#RRGGBB` format. |
-| `anchorAppearance` | Particles | Choose Particles (`PARTICLES`), Floating Orb (`ORB`), or Floating Cube (`CUBE`). The floating shapes have a thin outline. |
+| `anchorAppearance` | Floating Cube | Choose Particles (`PARTICLES`), Floating Orb (`ORB`), or Floating Cube (`CUBE`). The floating shapes have a thin outline. |
 | `anchorSeeThrough` | Off | Show the start marker through blocks. |
 | `anchorSeeThroughDistance` | 512 blocks | Start marker display range when see-through is on. Range 4–4,096 blocks. The trail uses its own display distance. The marker stays recognizable at long distances. |
 | `showRecordingDirection` | On | While recording, show a moving highlight that points toward the end of the trail. |

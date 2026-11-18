@@ -53,18 +53,18 @@
 
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
-| `loadDistance` | 18 格 | 在玩家周围多远开始生成并显示路段粒子。可设 4–64 格。 |
+| `loadDistance` | 40 格 | 在玩家周围多远开始生成并显示路段粒子。可设 4–64 格。 |
 | `recordPointSpacing` | 5 格 | 沿实际轨迹累计移动多远后记录下一个位置。可设 2–10 格，旧配置超出范围时自动调整到最近的边界。 |
-| `maxRecordedPoints` | 20,000 点 | 起点计入，路段共用的端点只计一次。达到上限时暂停新增记录并提示一次。可设 2–200,000 点。调低上限时保留当前路线，直到返程消点或手动清除。 |
-| `returnEraseDistance` | 2 格 | 返程时匹配这个距离内最近的记录点，截去它之后的路线。匹配到起点时结束返程。可设 0.5–6 格。 |
+| `maxRecordedPoints` | 8,192 点 | 起点计入，路段共用的端点只计一次。达到上限时暂停新增记录并提示一次。可设 1,024–16,384 点。调低上限时保留当前路线，直到返程消点或手动清除。 |
+| `returnEraseDistance` | 2 格 | 返程时匹配这个距离内最近的记录点，截去它之后的路线。匹配到起点时结束返程。可设 1–16 格。 |
 | `displayMode` | 轨迹线 | `LINE` 显示连线，`WAYPOINTS` 只标记记录点。两者都支持起点和移动的指路亮点。 |
-| `particleStyle` | 细尘 | 路线粒子可选细尘（`DUST`）、电火花（`SPARK`）、荧光（`GLOW`）和薄雾（`MIST`）。起点选用粒子外观时也使用这个样式。 |
-| `trailParticleSpacing` | 0.5 格 | 轨迹线粒子的间距，可设 0.1–2 格。 |
+| `particleStyle` | 荧光 | 路线粒子可选细尘（`DUST`）、电火花（`SPARK`）、荧光（`GLOW`）和薄雾（`MIST`）。起点选用粒子外观时也使用这个样式。 |
+| `trailParticleSpacing` | 0.7 格 | 轨迹线粒子的间距，可设 0.1–2 格。 |
 | `trailParticleLimit` | 90 个 | 每次刷新最多绘制的路线粒子数，可设 1–2,048 个。滑块最右侧是「无上限」，对应配置值 `0`。 |
 | `trailColor` | `#38E3FF` | 路线与方向亮点的颜色，使用 `#RRGGBB` 格式。 |
 | `anchorFollowsTrailColor` | 开启 | 起点标记与路线使用相同的颜色。 |
 | `anchorColor` | `#FFB036` | 关闭颜色同步时使用的起点颜色，格式为 `#RRGGBB`。 |
-| `anchorAppearance` | 粒子 | 起点可选粒子（`PARTICLES`）、浮空球（`ORB`）和浮空立方体（`CUBE`）。浮空模型带细描边。 |
+| `anchorAppearance` | 浮空立方体 | 起点可选粒子（`PARTICLES`）、浮空球（`ORB`）和浮空立方体（`CUBE`）。浮空模型带细描边。 |
 | `anchorSeeThrough` | 关闭 | 隔着方块显示起点标记本身。 |
 | `anchorSeeThroughDistance` | 512 格 | 开启起点透视时使用的起点显示距离，可设 4–4,096 格。路线仍使用自己的加载距离。远处的起点标记会保留可辨识的大小。 |
 | `showRecordingDirection` | 开启 | 记路时显示朝路线末端移动的亮点。 |
