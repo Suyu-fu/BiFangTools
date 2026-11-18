@@ -8,15 +8,19 @@
 
 <h1 align="center">哔方的妙妙工具 · BiFang Tools</h1>
 
-<p align="center">BiFang 制作的 Minecraft 模组，提供各种各样的妙妙小工具。</p>
-
-<p align="center"><strong>Minecraft Java 版 1.21.1 · NeoForge · 客户端</strong></p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Minecraft%20Java-1.21.1-397348" alt="Minecraft Java 版 1.21.1">
+  <img src="https://img.shields.io/badge/NeoForge-Client-b4502d" alt="NeoForge 客户端模组">
+  <a href="#许可证"><img src="https://img.shields.io/badge/license-MIT%20%7C%20CC%20BY--NC--SA%204.0-green" alt="代码采用 MIT，素材采用 CC BY-NC-SA 4.0"></a>
+</p>
 
 <p align="center">
   <a href="#快捷键">快捷键</a> ·
   <a href="#配置">配置</a> ·
   <a href="https://github.com/Suyu-fu/BiFangTools/issues">问题反馈</a>
 </p>
+
+哔方的妙妙工具是 BiFang 制作的 Minecraft 客户端辅助模组，提供各种实用小工具。
 
 ## 工具
 

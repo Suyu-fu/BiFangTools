@@ -8,15 +8,19 @@
 
 <h1 align="center">BiFang Tools</h1>
 
-<p align="center">A Minecraft mod by BiFang that adds a variety of fun and handy tools.</p>
-
-<p align="center"><strong>Minecraft Java Edition 1.21.1 · NeoForge · Client-side</strong></p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Minecraft%20Java-1.21.1-397348" alt="Minecraft Java Edition 1.21.1">
+  <img src="https://img.shields.io/badge/NeoForge-Client-b4502d" alt="NeoForge client-side mod">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%7C%20CC%20BY--NC--SA%204.0-green" alt="Code: MIT. Artwork: CC BY-NC-SA 4.0"></a>
+</p>
 
 <p align="center">
   <a href="#controls">Controls</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="https://github.com/Suyu-fu/BiFangTools/issues">Report an issue</a>
 </p>
+
+BiFang Tools is a client-side Minecraft mod by BiFang that adds practical tools for everyday play.
 
 ## Tools
 
