@@ -8,11 +8,13 @@ final class WaythreadConfig {
     static final String DEFAULT_ANCHOR_COLOR = "#FFB036";
     static final String TRAIL_PARTICLE_LIMIT_KEY = "trailParticleLimit";
     static final int MAX_RECORDED_POINT_LIMIT = 16_384;
+    static final double MAX_RECORD_POINT_SPACING = 10.0;
     static final int MAX_TRAIL_PARTICLE_LIMIT = 2048;
     private static final Pattern RGB_COLOR = Pattern.compile("#[0-9a-fA-F]{6}");
 
     static final ModConfigSpec SPEC;
     static final ModConfigSpec.IntValue LOAD_DISTANCE;
+    static final ModConfigSpec.EnumValue<BreadcrumbTrail.RecordingMode> RECORDING_MODE;
     static final ModConfigSpec.DoubleValue RECORD_POINT_SPACING;
     static final ModConfigSpec.IntValue MAX_RECORDED_POINTS;
     static final ModConfigSpec.DoubleValue RETURN_ERASE_DISTANCE;
@@ -39,10 +41,14 @@ final class WaythreadConfig {
                 .comment("Distance in blocks from the player at which nearby trail segments are generated and displayed.")
                 .translation("waythread.configuration.loadDistance")
                 .defineInRange("loadDistance", 40, 4, 64);
+        RECORDING_MODE = builder
+                .comment("Choose accumulated travel distance or straight-line distance from the last recorded point.")
+                .translation("waythread.configuration.recordingMode")
+                .defineEnum("recordingMode", BreadcrumbTrail.RecordingMode.TRAVELED_DISTANCE);
         RECORD_POINT_SPACING = builder
-                .comment("Travel distance in blocks before recording another position.")
+                .comment("Distance in blocks before recording another position, measured using the recording mode.")
                 .translation("waythread.configuration.recordPointSpacing")
-                .defineInRange("recordPointSpacing", 5.0, 2.0, 10.0);
+                .defineInRange("recordPointSpacing", 5.0, 2.0, MAX_RECORD_POINT_SPACING);
         MAX_RECORDED_POINTS = builder
                 .comment("Maximum number of recorded points, including the starting point.")
                 .translation("waythread.configuration.maxRecordedPoints")
@@ -66,7 +72,7 @@ final class WaythreadConfig {
         TRAIL_PARTICLE_LIMIT = builder
                 .comment("Maximum trail particles per refresh. Zero means unlimited.")
                 .translation("waythread.configuration.trailParticleLimit")
-                .defineInRange(TRAIL_PARTICLE_LIMIT_KEY, 90, 0, MAX_TRAIL_PARTICLE_LIMIT);
+                .defineInRange(TRAIL_PARTICLE_LIMIT_KEY, 0, 0, MAX_TRAIL_PARTICLE_LIMIT);
         TRAIL_COLOR = builder
                 .comment("RGB color of the trail particles in #RRGGBB format.")
                 .translation("waythread.configuration.trailColor")

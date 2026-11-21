@@ -34,8 +34,9 @@ import org.joml.Vector3f;
 final class TrailParticles {
     private static final double THREAD_HEIGHT = 0.15;
     private static final double PULSE_LENGTH = 8.0;
-    private final List<Particle> visible = new ArrayList<>();
+    private final List<TrackedParticle> visible = new ArrayList<>();
     private final List<Particle> anchorParticles = new ArrayList<>();
+    private int tick;
     private DisplayMode displayMode = DisplayMode.LINE;
     private Style style = Style.DUST;
     private AnchorRenderer.Appearance anchorAppearance = AnchorRenderer.Appearance.PARTICLES;
@@ -69,6 +70,10 @@ final class TrailParticles {
             anchorRgb = Integer.parseInt(anchorColor, 1, anchorColor.length(), 16);
             anchorDust = new DustParticleOptions(colorVector(anchorRgb), 1.3F);
         }
+    }
+
+    void setTick(int tick) {
+        this.tick = tick;
     }
 
     private static Vector3f colorVector(int rgb) {
@@ -209,11 +214,15 @@ final class TrailParticles {
         List<Vec3> recentPath = returnPath(trail, tail, routes);
         Vec3 point = pulsePosition(towardStart ? recentPath : recentPath.reversed(), tick);
         if (point != null && point.distanceToSqr(player) <= rangeSquared) {
-            Particle glow = spawn(ParticleTypes.END_ROD, point.add(0, THREAD_HEIGHT + 0.07, 0), 4);
-            if (glow != null) {
-                glow.setColor(pulseColor.x, pulseColor.y, pulseColor.z);
-                glow.scale(0.75F);
-            }
+            highlight(point);
+        }
+    }
+
+    void highlight(Vec3 point) {
+        Particle glow = spawn(ParticleTypes.END_ROD, point.add(0, THREAD_HEIGHT + 0.07, 0), 4);
+        if (glow != null) {
+            glow.setColor(pulseColor.x, pulseColor.y, pulseColor.z);
+            glow.scale(0.75F);
         }
     }
 
@@ -289,20 +298,32 @@ final class TrailParticles {
         if (effect != null) {
             effect.setParticleSpeed(0, 0, 0);
             effect.setLifetime(lifetime);
-            visible.add(effect);
+            // A full vanilla queue can evict a particle without marking it dead.
+            // Allow for the tick that moves the new particle into its render group.
+            visible.add(new TrackedParticle(effect, tick + lifetime + 2));
         }
         return effect;
     }
 
     void prune() {
-        visible.removeIf(effect -> !effect.isAlive());
+        visible.removeIf(effect -> effect.expire(tick));
         anchorParticles.removeIf(effect -> !effect.isAlive());
     }
 
     void clear() {
-        visible.forEach(Particle::remove);
+        visible.forEach(effect -> effect.particle().remove());
         visible.clear();
         anchorParticles.clear();
+    }
+
+    record TrackedParticle(Particle particle, int expiryTick) {
+        boolean expire(int tick) {
+            if (tick - expiryTick >= 0) {
+                particle.remove();
+                return true;
+            }
+            return !particle.isAlive();
+        }
     }
 
     private static final class AnchorParticleRenderTypes {
