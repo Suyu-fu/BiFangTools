@@ -1,11 +1,11 @@
 package dev.waythread;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.MeshData;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.ColorTargetState;
+import com.mojang.blaze3d.pipeline.DepthStencilState;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.CompareOp;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -13,29 +13,33 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.SimpleAnimatedParticle;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.RenderStateShard;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent;
+import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
 import net.neoforged.neoforge.common.TranslatableEnum;
-import org.joml.Matrix4fStack;
 import org.joml.Vector3f;
 
 final class TrailParticles {
     private static final double THREAD_HEIGHT = 0.15;
     private static final double PULSE_LENGTH = 8.0;
-    private final List<Particle> visible = new ArrayList<>();
+    private final List<TrackedParticle> visible = new ArrayList<>();
     private final List<Particle> anchorParticles = new ArrayList<>();
+    private int tick;
     private DisplayMode displayMode = DisplayMode.LINE;
     private Style style = Style.DUST;
     private AnchorRenderer.Appearance anchorAppearance = AnchorRenderer.Appearance.PARTICLES;
@@ -61,14 +65,18 @@ final class TrailParticles {
             this.trailColor = trailColor;
             trailRgb = Integer.parseInt(trailColor, 1, trailColor.length(), 16);
             Vector3f tint = colorVector(trailRgb);
-            threadDust = new DustParticleOptions(tint, 0.72F);
+            threadDust = new DustParticleOptions(trailRgb, 0.72F);
             pulseColor = new Vector3f(tint).lerp(new Vector3f(1, 1, 1), 0.55F);
         }
         if (!anchorColor.equals(this.anchorColor)) {
             this.anchorColor = anchorColor;
             anchorRgb = Integer.parseInt(anchorColor, 1, anchorColor.length(), 16);
-            anchorDust = new DustParticleOptions(colorVector(anchorRgb), 1.3F);
+            anchorDust = new DustParticleOptions(anchorRgb, 1.3F);
         }
+    }
+
+    void setTick(int tick) {
+        this.tick = tick;
     }
 
     private static Vector3f colorVector(int rgb) {
@@ -172,35 +180,52 @@ final class TrailParticles {
         }
     }
 
-    void renderSeeThroughAnchor(RenderLevelStageEvent event, float partialTick, Vec3 displayOffset) {
-        BufferBuilder buffer = null;
+    AnchorQuads extractSeeThroughAnchor(Camera camera, float partialTick, Vec3 displayOffset) {
+        AnchorQuads quads = new AnchorQuads(displayOffset);
         for (Particle particle : anchorParticles) {
-            if (particle.isAlive()) {
-                if (buffer == null) {
-                    buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
-                }
-                particle.render(buffer, event.getCamera(), partialTick);
+            if (particle.isAlive() && particle instanceof SingleQuadParticle quad) {
+                quad.extract(quads, camera, partialTick);
             }
         }
-        MeshData mesh = buffer == null ? null : buffer.build();
-        if (mesh == null) {
-            return;
+        return quads;
+    }
+
+    static final class AnchorQuads extends QuadParticleRenderState {
+        private final Vec3 offset;
+        private final List<Quad> quads = new ArrayList<>();
+
+        AnchorQuads(Vec3 offset) {
+            this.offset = offset;
         }
-        Matrix4fStack view = RenderSystem.getModelViewStack();
-        view.pushMatrix().mul(event.getModelViewMatrix());
-        boolean projected = displayOffset.lengthSqr() > 0;
-        if (projected) {
-            view.translate((float) displayOffset.x, (float) displayOffset.y, (float) displayOffset.z);
+
+        @Override
+        public void add(SingleQuadParticle.Layer layer, float x, float y, float z, float xRot, float yRot,
+                float zRot, float wRot, float scale, float u0, float u1, float v0, float v1, int color, int light) {
+            quads.add(new Quad(x + (float) offset.x, y + (float) offset.y, z + (float) offset.z,
+                    xRot, yRot, zRot, wRot, scale, u0, u1, v0, v1, color, light));
         }
-        RenderSystem.applyModelViewMatrix();
-        try {
-            if (projected) {
-                RenderSystem.disableDepthTest();
+
+        @Override
+        public boolean isEmpty() {
+            return quads.isEmpty();
+        }
+
+        void submit(SubmitCustomGeometryEvent event) {
+            RenderType type = offset.lengthSqr() > 0 ? AnchorParticleRenderTypes.PROJECTED
+                    : AnchorParticleRenderTypes.OCCLUDED;
+            event.getSubmitNodeCollector().submitCustomGeometry(event.getPoseStack(), type,
+                    (pose, buffer) -> renderQuads(buffer));
+        }
+
+        private void renderQuads(VertexConsumer buffer) {
+            for (Quad quad : quads) {
+                renderRotatedQuad(buffer, quad.x, quad.y, quad.z, quad.xRot, quad.yRot, quad.zRot, quad.wRot,
+                        quad.scale, quad.u0, quad.u1, quad.v0, quad.v1, quad.color, quad.light);
             }
-            (projected ? AnchorParticleRenderTypes.PROJECTED : AnchorParticleRenderTypes.OCCLUDED).draw(mesh);
-        } finally {
-            view.popMatrix();
-            RenderSystem.applyModelViewMatrix();
+        }
+
+        private record Quad(float x, float y, float z, float xRot, float yRot, float zRot, float wRot,
+                            float scale, float u0, float u1, float v0, float v1, int color, int light) {
         }
     }
 
@@ -209,11 +234,15 @@ final class TrailParticles {
         List<Vec3> recentPath = returnPath(trail, tail, routes);
         Vec3 point = pulsePosition(towardStart ? recentPath : recentPath.reversed(), tick);
         if (point != null && point.distanceToSqr(player) <= rangeSquared) {
-            Particle glow = spawn(ParticleTypes.END_ROD, point.add(0, THREAD_HEIGHT + 0.07, 0), 4);
-            if (glow != null) {
-                glow.setColor(pulseColor.x, pulseColor.y, pulseColor.z);
-                glow.scale(0.75F);
-            }
+            highlight(point);
+        }
+    }
+
+    void highlight(Vec3 point) {
+        Particle glow = spawn(ParticleTypes.END_ROD, point.add(0, THREAD_HEIGHT + 0.07, 0), 4);
+        if (glow instanceof SingleQuadParticle quad) {
+            quad.setColor(pulseColor.x, pulseColor.y, pulseColor.z);
+            quad.scale(0.75F);
         }
     }
 
@@ -273,9 +302,9 @@ final class TrailParticles {
 
     private Particle spawnStyled(ParticleOptions type, Vec3 point, int lifetime, int rgb, float scale) {
         Particle effect = spawn(type, point, lifetime);
-        if (effect != null && style != Style.DUST) {
-            effect.setColor((rgb >> 16) / 255.0F, ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F);
-            effect.scale(style.scale * scale);
+        if (effect instanceof SingleQuadParticle quad && style != Style.DUST) {
+            quad.setColor((rgb >> 16) / 255.0F, ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F);
+            quad.scale(style.scale * scale);
             if (effect instanceof SimpleAnimatedParticle animated) {
                 animated.setFadeColor(rgb);
             }
@@ -289,40 +318,60 @@ final class TrailParticles {
         if (effect != null) {
             effect.setParticleSpeed(0, 0, 0);
             effect.setLifetime(lifetime);
-            visible.add(effect);
+            // A full vanilla queue can evict a particle without marking it dead.
+            // Allow for the tick that moves the new particle into its render group.
+            visible.add(new TrackedParticle(effect, tick + lifetime + 2));
         }
         return effect;
     }
 
     void prune() {
-        visible.removeIf(effect -> !effect.isAlive());
+        visible.removeIf(effect -> effect.expire(tick));
         anchorParticles.removeIf(effect -> !effect.isAlive());
     }
 
     void clear() {
-        visible.forEach(Particle::remove);
+        visible.forEach(effect -> effect.particle().remove());
         visible.clear();
         anchorParticles.clear();
     }
 
-    private static final class AnchorParticleRenderTypes {
-        private static final RenderType OCCLUDED = create("waythread_anchor_particles_behind_blocks",
-                RenderStateShard.GREATER_DEPTH_TEST);
-        private static final RenderType PROJECTED = create("waythread_anchor_particles_at_distance",
-                RenderStateShard.NO_DEPTH_TEST);
+    record TrackedParticle(Particle particle, int expiryTick) {
+        boolean expire(int tick) {
+            if (tick - expiryTick >= 0) {
+                particle.remove();
+                return true;
+            }
+            return !particle.isAlive();
+        }
+    }
 
-        @SuppressWarnings("deprecation") // ParticleEngine still registers this atlas in Minecraft 1.21.1.
-        private static RenderType create(String name, RenderStateShard.DepthTestStateShard depthTest) {
-            return RenderType.create(name, DefaultVertexFormat.PARTICLE, VertexFormat.Mode.QUADS, 1536,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(new RenderStateShard.ShaderStateShard(GameRenderer::getParticleShader))
-                            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_PARTICLES, false, false))
-                            .setLightmapState(RenderStateShard.LIGHTMAP)
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setDepthTestState(depthTest)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .createCompositeState(false));
+    static void registerPipelines(RegisterRenderPipelinesEvent event) {
+        event.registerPipeline(AnchorParticleRenderTypes.OCCLUDED_PIPELINE);
+        event.registerPipeline(AnchorParticleRenderTypes.PROJECTED_PIPELINE);
+    }
+
+    private static final class AnchorParticleRenderTypes {
+        private static final RenderPipeline OCCLUDED_PIPELINE = pipeline("anchor_particles_behind_blocks", CompareOp.GREATER_THAN);
+        private static final RenderPipeline PROJECTED_PIPELINE = pipeline("anchor_particles_at_distance", CompareOp.ALWAYS_PASS);
+        private static final RenderType OCCLUDED = type("anchor_particles_behind_blocks", OCCLUDED_PIPELINE);
+        private static final RenderType PROJECTED = type("anchor_particles_at_distance", PROJECTED_PIPELINE);
+
+        private static RenderPipeline pipeline(String name, CompareOp depthTest) {
+            return RenderPipeline.builder(RenderPipelines.PARTICLE_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(Waythread.MOD_ID, "pipeline/" + name))
+                    .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+                    .withDepthStencilState(new DepthStencilState(depthTest, false))
+                    .withCull(false)
+                    .build();
+        }
+
+        private static RenderType type(String name, RenderPipeline pipeline) {
+            return RenderType.create(name, RenderSetup.builder(pipeline)
+                    .withTexture("Sampler0", SingleQuadParticle.Layer.TRANSLUCENT.textureAtlasLocation())
+                    .useLightmap()
+                    .sortOnUpload()
+                    .createRenderSetup());
         }
     }
 

@@ -9,8 +9,8 @@ import java.util.function.BiPredicate;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
@@ -21,7 +21,7 @@ final class DimensionalTrail {
     private int earlierPoints;
     private boolean recordingGap;
     private boolean pointLimitNotified;
-    private ReturnState returnState = ReturnState.ON_ROUTE;
+    private RouteAlignment returnAlignment = RouteAlignment.ON_ROUTE;
 
     DimensionalTrail(ResourceKey<Level> dimension, Vec3 anchor) {
         appendVisit(dimension, anchor, false);
@@ -32,12 +32,12 @@ final class DimensionalTrail {
 
     CompoundTag writeSave() {
         CompoundTag tag = new CompoundTag();
-        tag.putString("ReturnState", returnState.name());
+        tag.putString("ReturnState", returnAlignment.name());
         tag.putBoolean("RecordingGap", recordingGap);
         ListTag encodedVisits = new ListTag();
         for (Visit visit : visits) {
             CompoundTag encoded = new CompoundTag();
-            encoded.putString("Dimension", visit.dimension().location().toString());
+            encoded.putString("Dimension", visit.dimension().identifier().toString());
             encoded.putBoolean("Linked", visit.linkedToPrevious());
             encoded.put("Path", visit.path().writeSave());
             encodedVisits.add(encoded);
@@ -54,25 +54,25 @@ final class DimensionalTrail {
         int points = 0;
         ResourceKey<Level> previousDimension = null;
         for (int index = 0; index < encodedVisits.size(); index++) {
-            CompoundTag encoded = encodedVisits.getCompound(index);
-            ResourceLocation id = ResourceLocation.tryParse(encoded.getString("Dimension"));
+            CompoundTag encoded = (CompoundTag) encodedVisits.get(index);
+            Identifier id = Identifier.tryParse(encoded.getStringOr("Dimension", ""));
             TrailSave.require(id != null && !id.getPath().isEmpty(), "Invalid route dimension");
             ResourceKey<Level> dimension = ResourceKey.create(Registries.DIMENSION, id);
-            boolean linked = encoded.getBoolean("Linked");
+            boolean linked = encoded.getBooleanOr("Linked", false);
             TrailSave.require(!linked || (previousDimension != null && !previousDimension.equals(dimension)),
                     "Invalid route dimension boundary");
-            BreadcrumbTrail path = BreadcrumbTrail.readSave(encoded.getCompound("Path"), pointLimit - points,
+            BreadcrumbTrail path = BreadcrumbTrail.readSave(encoded.getCompoundOrEmpty("Path"), pointLimit - points,
                     index == encodedVisits.size() - 1);
             TrailSave.require(path.pointCount() > 0 || encodedVisits.size() == 1, "Empty route visit");
             trail.appendVisit(new Visit(dimension, path, linked));
             points += path.pointCount();
             previousDimension = dimension;
         }
-        trail.returnState = ReturnState.valueOf(tag.getString("ReturnState"));
-        TrailSave.require(trail.returnState != ReturnState.AT_BOUNDARY
+        trail.returnAlignment = RouteAlignment.valueOf(tag.getStringOr("ReturnState", ""));
+        TrailSave.require(trail.returnAlignment != RouteAlignment.AT_BOUNDARY
                 || (trail.visits.size() > 1 && trail.visits.getLast().path().pointCount() == 1),
                 "Invalid return boundary");
-        trail.recordingGap = tag.getBoolean("RecordingGap");
+        trail.recordingGap = tag.getBooleanOr("RecordingGap", false);
         return trail;
     }
 
@@ -80,14 +80,64 @@ final class DimensionalTrail {
         if (activePath(dimension) == null) {
             if (!returning) {
                 recordingGap = true;
-            } else if (returnState == ReturnState.ON_ROUTE) {
-                returnState = ReturnState.DETACHED;
+            } else if (returnAlignment == RouteAlignment.ON_ROUTE) {
+                returnAlignment = RouteAlignment.DETACHED;
             }
         }
     }
 
     int pointCount() {
         return earlierPoints + visits.getLast().path().pointCount();
+    }
+
+    int visitCount() {
+        return visits.size();
+    }
+
+    Visit visit(int index) {
+        return visits.get(index);
+    }
+
+    List<Visit> visitsIn(ResourceKey<Level> dimension) {
+        return byDimension.getOrDefault(dimension, List.of());
+    }
+
+    void setRecordingMode(BreadcrumbTrail.RecordingMode mode) {
+        visits.getLast().path().setRecordingMode(mode);
+    }
+
+    void freezeForRecovery(ResourceKey<Level> dimension, Vec3 position, boolean returning,
+            double spacing, int pointLimit, double eraseDistance, BiPredicate<Vec3, Vec3> canJoin) {
+        BreadcrumbTrail path = activePath(dimension);
+        if (!waitingToRejoin() && !recordingGap && path != null) {
+            if (returning) {
+                path.resume(position, spacing, pointLimit - earlierPoints, eraseDistance, canJoin);
+            } else if (path.pointCount() < pointLimit - earlierPoints) {
+                path.record(position, spacing, pointLimit - earlierPoints);
+            }
+            path.captureEndpoint(pointLimit - earlierPoints);
+        }
+        visits.getLast().path().resetReturnMatch();
+        returnAlignment = RouteAlignment.ON_ROUTE;
+    }
+
+    void continueAfterRecovery(ResourceKey<Level> dimension, Vec3 position, int pointLimit,
+            double eraseDistance, BiPredicate<Vec3, Vec3> canJoin) {
+        BreadcrumbTrail path = activePath(dimension);
+        if (path != null) {
+            Vec3 endpoint = path.endpoint();
+            boolean joinEndpoint = !recordingGap && !endpoint.equals(position)
+                    && endpoint.distanceToSqr(position) <= eraseDistance * eraseDistance
+                    && canJoin.test(endpoint, position);
+            path.continueRecording(position, pointLimit - earlierPoints, joinEndpoint);
+            recordingGap = false;
+        } else if (pointCount() < pointLimit) {
+            appendVisit(dimension, position, false);
+            recordingGap = false;
+        } else {
+            recordingGap = true;
+        }
+        pointLimitNotified = false;
     }
 
     boolean hasRecordedPath() {
@@ -119,7 +169,7 @@ final class DimensionalTrail {
         Visit last = visits.getLast();
         if (recordingGap || !last.dimension().equals(dimension)) {
             if (!recordingGap) {
-                last.path().captureEndpoint(pointLimit - earlierPoints);
+                last.path().captureDeparture(pointLimit - earlierPoints);
             }
             if (pointCount() < pointLimit) {
                 appendVisit(dimension, position, !recordingGap);
@@ -139,15 +189,20 @@ final class DimensionalTrail {
 
     void beginReturn(ResourceKey<Level> dimension, int pointLimit) {
         visits.getLast().path().beginReturn(pointLimit - earlierPoints);
-        returnState = !recordingGap && activePath(dimension) != null ? ReturnState.ON_ROUTE : ReturnState.DETACHED;
+        returnAlignment = !recordingGap && activePath(dimension) != null
+                ? RouteAlignment.ON_ROUTE : RouteAlignment.DETACHED;
     }
 
     boolean waitingToRejoin() {
-        return returnState != ReturnState.ON_ROUTE;
+        return returnAlignment.waitingToRejoin();
+    }
+
+    RouteAlignment returnAlignment() {
+        return returnAlignment;
     }
 
     ResourceKey<Level> boundaryDestination() {
-        return returnState == ReturnState.AT_BOUNDARY ? previousVisit().dimension() : null;
+        return returnAlignment == RouteAlignment.AT_BOUNDARY ? previousVisit().dimension() : null;
     }
 
     BreadcrumbTrail.RewindResult rewind(ResourceKey<Level> dimension, Vec3 position, double eraseDistance) {
@@ -158,7 +213,7 @@ final class DimensionalTrail {
         BreadcrumbTrail.RewindResult result = visits.size() > 1
                 ? path.rewind(position, eraseDistance, true) : path.rewind(position, eraseDistance);
         if (result == BreadcrumbTrail.RewindResult.BOUNDARY) {
-            returnState = ReturnState.AT_BOUNDARY;
+            returnAlignment = RouteAlignment.AT_BOUNDARY;
         }
         return result;
     }
@@ -172,15 +227,14 @@ final class DimensionalTrail {
         Visit last = visits.getLast();
         Visit previous = previousVisit();
         double rangeSquared = eraseDistance * eraseDistance;
-        if (returnState != ReturnState.DETACHED && departure != null && previous != null && last.linkedToPrevious()
-                && last.dimension().equals(from) && previous.dimension().equals(to)
-                && departure.distanceToSqr(last.path().anchor()) <= rangeSquared
-                && arrival.distanceToSqr(previous.path().endpoint()) <= rangeSquared) {
+        if (returnAlignment != RouteAlignment.DETACHED && previous != null && last.linkedToPrevious()
+                && new RouteTarget(last.dimension(), last.path().anchor()).isWithin(from, departure, rangeSquared)
+                && new RouteTarget(previous.dimension(), previous.path().endpoint()).isWithin(to, arrival, rangeSquared)) {
             selectVisit(previous);
             return true;
         }
-        if (returnState == ReturnState.ON_ROUTE) {
-            returnState = ReturnState.DETACHED;
+        if (returnAlignment == RouteAlignment.ON_ROUTE) {
+            returnAlignment = RouteAlignment.DETACHED;
         }
         last.path().resetReturnMatch();
         return false;
@@ -191,7 +245,7 @@ final class DimensionalTrail {
             return RejoinResult.NO_MATCH;
         }
         Visit last = visits.getLast();
-        Visit preferred = returnState == ReturnState.AT_BOUNDARY ? previousVisit() : last;
+        Visit preferred = returnAlignment == RouteAlignment.AT_BOUNDARY ? previousVisit() : last;
         Visit match = null;
         if (preferred != null && preferred.dimension().equals(dimension)
                 && preferred.path().hasPointWithin(position, eraseDistance)) {
@@ -224,12 +278,16 @@ final class DimensionalTrail {
             path.resume(position, spacing, pointLimit - earlierPoints, eraseDistance, canJoin);
             recordingGap = false;
         }
-        returnState = ReturnState.ON_ROUTE;
+        returnAlignment = RouteAlignment.ON_ROUTE;
         pointLimitNotified = false;
     }
 
     private void appendVisit(ResourceKey<Level> dimension, Vec3 position, boolean linkedToPrevious) {
-        appendVisit(new Visit(dimension, new BreadcrumbTrail(position), linkedToPrevious));
+        BreadcrumbTrail path = new BreadcrumbTrail(position);
+        if (!visits.isEmpty()) {
+            path.setRecordingMode(visits.getLast().path().recordingMode());
+        }
+        appendVisit(new Visit(dimension, path, linkedToPrevious));
     }
 
     private void appendVisit(Visit visit) {
@@ -256,15 +314,11 @@ final class DimensionalTrail {
             earlierPoints -= visits.getLast().path().pointCount();
         }
         target.path().resetReturnMatch();
-        returnState = ReturnState.ON_ROUTE;
+        returnAlignment = RouteAlignment.ON_ROUTE;
         recordingGap = false;
     }
 
-    private record Visit(ResourceKey<Level> dimension, BreadcrumbTrail path, boolean linkedToPrevious) {
-    }
-
-    private enum ReturnState {
-        ON_ROUTE, AT_BOUNDARY, DETACHED
+    record Visit(ResourceKey<Level> dimension, BreadcrumbTrail path, boolean linkedToPrevious) {
     }
 
     enum Marker {

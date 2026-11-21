@@ -20,6 +20,7 @@ import net.minecraft.client.gui.components.tabs.TabManager;
 import net.minecraft.client.gui.components.tabs.TabNavigationBar;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
@@ -68,16 +69,15 @@ final class TrailConfigurationScreen extends ConfigurationScreen.ConfigurationSe
     @Override
     protected void repositionElements() {
         if (tabs != null) {
-            tabs.setWidth(width);
-            tabs.arrangeElements();
+            tabs.updateWidth(width);
             layout.setHeaderHeight(tabs.getRectangle().bottom() + 4);
         }
         super.repositionElements();
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        return (tabs != null && tabs.keyPressed(keyCode)) || super.keyPressed(keyCode, scanCode, modifiers);
+    public boolean keyPressed(KeyEvent event) {
+        return (tabs != null && tabs.keyPressed(event)) || super.keyPressed(event);
     }
 
     @Override
@@ -200,7 +200,8 @@ final class TrailConfigurationScreen extends ConfigurationScreen.ConfigurationSe
                 WaythreadConfig.ANCHOR_APPEARANCE, WaythreadConfig.ANCHOR_FOLLOWS_TRAIL_COLOR, WaythreadConfig.ANCHOR_COLOR,
                 WaythreadConfig.ANCHOR_SEE_THROUGH, WaythreadConfig.ANCHOR_SEE_THROUGH_DISTANCE))),
         RECORD_RETURN("waythread.configuration.page.recordReturn",
-                new Group("waythread.configuration.group.recording", List.of(WaythreadConfig.RECORD_POINT_SPACING,
+                new Group("waythread.configuration.group.recording", List.of(WaythreadConfig.RECORDING_MODE,
+                        WaythreadConfig.RECORD_POINT_SPACING,
                         WaythreadConfig.MAX_RECORDED_POINTS, WaythreadConfig.SHOW_RECORDING_DIRECTION)),
                 new Group("waythread.configuration.group.returning", List.of(WaythreadConfig.RETURN_ERASE_DISTANCE,
                         WaythreadConfig.SHOW_RETURN_PROGRESS_BAR, WaythreadConfig.SHOW_RETURN_PERCENTAGE,
@@ -231,6 +232,11 @@ final class TrailConfigurationScreen extends ConfigurationScreen.ConfigurationSe
         @Override
         public Component getTabTitle() {
             return Component.translatable(nameKey);
+        }
+
+        @Override
+        public Component getTabExtraNarration() {
+            return Component.empty();
         }
 
         @Override

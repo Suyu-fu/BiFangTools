@@ -1,22 +1,28 @@
 package dev.waythread;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.pipeline.ColorTargetState;
+import com.mojang.blaze3d.pipeline.DepthStencilState;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import net.minecraft.client.renderer.RenderStateShard;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.FastColor;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent;
+import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
 import net.neoforged.neoforge.common.TranslatableEnum;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 
 final class AnchorRenderer {
     private static final int SLICES = 16;
@@ -31,28 +37,30 @@ final class AnchorRenderer {
     private AnchorRenderer() {
     }
 
-    static void render(RenderLevelStageEvent event, Vec3 center, Appearance appearance, boolean seeThrough, int rgb, float time) {
-        renderMarker(event, center, appearance, seeThrough, rgb, time, false);
+    static void registerPipelines(RegisterRenderPipelinesEvent event) {
+        event.registerPipeline(BodyRenderTypes.NORMAL_PIPELINE);
+        event.registerPipeline(BodyRenderTypes.SEE_THROUGH_PIPELINE);
     }
 
-    static void renderRelay(RenderLevelStageEvent event, Vec3 center, boolean seeThrough, int rgb, float time) {
-        renderMarker(event, center, Appearance.ORB, seeThrough, rgb, time, true);
+    static void submit(SubmitCustomGeometryEvent event, Marker marker) {
+        RenderType type = marker.seeThrough ? BodyRenderTypes.SEE_THROUGH : BodyRenderTypes.NORMAL;
+        event.getSubmitNodeCollector().submitCustomGeometry(event.getPoseStack(), type,
+                (pose, buffer) -> renderMarker(buffer, new Matrix4f(pose.pose()), marker));
     }
 
-    private static void renderMarker(RenderLevelStageEvent event, Vec3 center, Appearance appearance,
-            boolean seeThrough, int rgb, float time, boolean relay) {
-        Vec3 camera = event.getCamera().getPosition();
-        Matrix4f transform = new Matrix4f(event.getModelViewMatrix()).translate(
-                (float) (center.x - camera.x), (float) (center.y - camera.y), (float) (center.z - camera.z));
-        Matrix4f ringTransform = relay ? new Matrix4f(transform).rotate(event.getCamera().rotation()) : null;
+    private static void renderMarker(VertexConsumer buffer, Matrix4f transform, Marker marker) {
+        Vec3 center = marker.cameraRelativePosition;
+        Appearance appearance = marker.appearance;
+        int rgb = marker.rgb;
+        transform.translate((float) center.x, (float) center.y, (float) center.z);
+        Matrix4f ringTransform = marker.ringRotation == null ? null : new Matrix4f(transform).rotate(marker.ringRotation);
         if (appearance == Appearance.CUBE) {
-            transform.rotateY(time * 0.037F).rotateX(0.26F).scale(0.18F);
+            transform.rotateY(marker.time * 0.037F).rotateX(0.26F).scale(0.18F);
         } else {
-            transform.scale(relay ? 0.135F : 0.22F);
+            transform.scale(ringTransform != null ? 0.135F : 0.22F);
         }
-        BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
         List<Vertex> vertices = vertices(appearance);
-        int lightFrame = FastColor.ARGB32.lerp(0.65F, 0xFF000000 | rgb, 0xFFFFFFFF);
+        int lightFrame = ARGB.srgbLerp(0.65F, 0xFF000000 | rgb, 0xFFFFFFFF);
         drawOutline(buffer, transform, vertices, appearance == Appearance.CUBE ? lightFrame : outlineColor(rgb));
         for (Vertex vertex : vertices) {
             buffer.addVertex(transform, vertex.x, vertex.y, vertex.z).setColor(tint(rgb, vertex.light));
@@ -62,13 +70,9 @@ final class AnchorRenderer {
                 buffer.addVertex(ringTransform, vertex.x, vertex.y, vertex.z).setColor(lightFrame);
             }
         }
-        if (seeThrough) {
-            RenderSystem.disableDepthTest();
-        }
-        (seeThrough ? BodyRenderTypes.SEE_THROUGH : BodyRenderTypes.NORMAL).draw(buffer.buildOrThrow());
     }
 
-    private static void drawOutline(BufferBuilder buffer, Matrix4f transform, List<Vertex> vertices, int color) {
+    private static void drawOutline(VertexConsumer buffer, Matrix4f transform, List<Vertex> vertices, int color) {
         Matrix4f outline = new Matrix4f(transform).scale(OUTLINE_SCALE);
         for (int i = 0; i < vertices.size(); i += 3) {
             // Reversed winding shows only the back faces of the expanded mesh around the body.
@@ -78,7 +82,7 @@ final class AnchorRenderer {
         }
     }
 
-    private static void outlineVertex(BufferBuilder buffer, Matrix4f transform, Vertex vertex, int color) {
+    private static void outlineVertex(VertexConsumer buffer, Matrix4f transform, Vertex vertex, int color) {
         buffer.addVertex(transform, vertex.x, vertex.y, vertex.z).setColor(color);
     }
 
@@ -208,17 +212,25 @@ final class AnchorRenderer {
     private record Vertex(float x, float y, float z, float light) {
     }
 
-    private static final class BodyRenderTypes {
-        private static final RenderType NORMAL = create("waythread_anchor", RenderStateShard.LEQUAL_DEPTH_TEST);
-        private static final RenderType SEE_THROUGH = create("waythread_anchor_see_through", RenderStateShard.NO_DEPTH_TEST);
+    record Marker(Vec3 cameraRelativePosition, Appearance appearance, boolean seeThrough, int rgb, float time,
+                  Quaternionf ringRotation) {
+    }
 
-        private static RenderType create(String name, RenderStateShard.DepthTestStateShard depthTest) {
-            return RenderType.create(name, DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES, 16_384,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RenderStateShard.POSITION_COLOR_SHADER)
-                            .setDepthTestState(depthTest)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .createCompositeState(false));
+    private static final class BodyRenderTypes {
+        private static final RenderPipeline NORMAL_PIPELINE = pipeline("waythread_anchor", CompareOp.LESS_THAN_OR_EQUAL);
+        private static final RenderPipeline SEE_THROUGH_PIPELINE = pipeline("waythread_anchor_see_through", CompareOp.ALWAYS_PASS);
+        private static final RenderType NORMAL = RenderType.create("waythread_anchor",
+                RenderSetup.builder(NORMAL_PIPELINE).bufferSize(16_384).createRenderSetup());
+        private static final RenderType SEE_THROUGH = RenderType.create("waythread_anchor_see_through",
+                RenderSetup.builder(SEE_THROUGH_PIPELINE).bufferSize(16_384).createRenderSetup());
+
+        private static RenderPipeline pipeline(String name, CompareOp depthTest) {
+            return RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(Waythread.MOD_ID, "pipeline/" + name))
+                    .withColorTargetState(ColorTargetState.DEFAULT)
+                    .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES)
+                    .withDepthStencilState(new DepthStencilState(depthTest, false))
+                    .build();
         }
     }
 

@@ -13,12 +13,16 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.phys.Vec3;
 
-record TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPointCount) {
+record TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPointCount, RecoveryRoute recovery) {
     private static final int FORMAT_VERSION = 1;
+    private static final int RECOVERY_FORMAT_VERSION = 2;
     private static final int MAX_NBT_BYTES = 32 * 1024 * 1024;
+
+    TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPointCount) {
+        this(trail, mode, returnStartPointCount, null);
+    }
 
     static Path fileFor(Path clientConfig, Path worldDirectory, long worldSeed) throws IOException {
         String world = worldDirectory.toRealPath().toString();
@@ -30,11 +34,25 @@ record TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPoi
         if (Files.notExists(file)) {
             return null;
         }
-        CompoundTag tag = NbtIo.readCompressed(file, NbtAccounter.create(MAX_NBT_BYTES));
-        require(tag.getInt("Version") == FORMAT_VERSION, "Unsupported route save version");
-        Waythread.Mode mode = Waythread.Mode.valueOf(tag.getString("Mode"));
-        DimensionalTrail trail = DimensionalTrail.readSave(tag.getCompound("Route"));
-        int startingPoints = tag.getInt("ReturnStart");
+        return readTag(NbtIo.readCompressed(file, NbtAccounter.create(MAX_NBT_BYTES)));
+    }
+
+    private static TrailSave readTag(CompoundTag tag) throws IOException {
+        int version = tag.getIntOr("Version", 0);
+        require(version == FORMAT_VERSION || version == RECOVERY_FORMAT_VERSION, "Unsupported route save version");
+        boolean hasRecovery = version == RECOVERY_FORMAT_VERSION;
+        String savedMode = tag.getStringOr("Mode", "");
+        require(hasRecovery == savedMode.equals("RECOVERY"), "Recovery state does not match its format");
+        DimensionalTrail trail = DimensionalTrail.readSave(tag.getCompoundOrEmpty("Route"));
+        RecoveryRoute recovery = hasRecovery ? RecoveryRoute.readSave(tag.getCompoundOrEmpty("Recovery"), trail) : null;
+        Waythread.Mode mode;
+        if (recovery == null) {
+            mode = Waythread.Mode.valueOf(savedMode);
+            require(mode != Waythread.Mode.IDLE && !mode.isRecovery(), "Unexpected saved mode");
+        } else {
+            mode = recovery.active() ? Waythread.Mode.RECOVERING : Waythread.Mode.WAITING_FOR_RECOVERY;
+        }
+        int startingPoints = tag.getIntOr("ReturnStart", 0);
         int points = trail.pointCount();
         require((mode == Waythread.Mode.ARRIVED) == (points == 0), "Route count does not match its mode");
         if (mode == Waythread.Mode.RETURNING) {
@@ -43,27 +61,51 @@ record TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPoi
         } else {
             require(startingPoints == 0 && !trail.waitingToRejoin(), "Unexpected return state");
         }
-        return new TrailSave(trail, mode, startingPoints);
+        return new TrailSave(trail, mode, startingPoints, recovery);
     }
 
     void write(Path file) throws IOException {
+        snapshot().write(file);
+    }
+
+    Snapshot snapshot() {
         CompoundTag tag = new CompoundTag();
-        tag.putInt("Version", FORMAT_VERSION);
-        tag.putString("Mode", mode.name());
+        tag.putInt("Version", recovery == null ? FORMAT_VERSION : RECOVERY_FORMAT_VERSION);
+        tag.putString("Mode", recovery == null ? mode.name() : "RECOVERY");
         tag.putInt("ReturnStart", returnStartPointCount);
         tag.put("Route", trail.writeSave());
-        Path directory = file.getParent();
-        Files.createDirectories(directory);
-        Path temporary = Files.createTempFile(directory, "waythread-", ".tmp");
-        try {
-            NbtIo.writeCompressed(tag, temporary);
+        if (recovery != null) {
+            tag.put("Recovery", recovery.writeSave());
+        }
+        return new Snapshot(tag);
+    }
+
+    static final class Snapshot {
+        // The tag owns its arrays and lists. Neither reading nor writing changes them.
+        private final CompoundTag tag;
+
+        private Snapshot(CompoundTag tag) {
+            this.tag = tag;
+        }
+
+        TrailSave read() throws IOException {
+            return readTag(tag);
+        }
+
+        void write(Path file) throws IOException {
+            Path directory = file.getParent();
+            Files.createDirectories(directory);
+            Path temporary = Files.createTempFile(directory, "waythread-", ".tmp");
             try {
-                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+                NbtIo.writeCompressed(tag, temporary);
+                try {
+                    Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException ignored) {
+                    Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(temporary);
             }
-        } finally {
-            Files.deleteIfExists(temporary);
         }
     }
 
@@ -89,8 +131,7 @@ record TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPoi
     }
 
     static List<Vec3> positions(CompoundTag tag, String name, int limit) throws IOException {
-        require(tag.contains(name, Tag.TAG_LONG_ARRAY), "Missing route position array");
-        long[] data = tag.getLongArray(name);
+        long[] data = tag.getLongArray(name).orElseThrow(() -> new IOException("Missing route position array"));
         require(data.length % 3 == 0 && data.length / 3 <= limit, "Invalid route position count");
         List<Vec3> points = new ArrayList<>(data.length / 3);
         for (int index = 0; index < data.length; index += 3) {
@@ -106,7 +147,7 @@ record TrailSave(DimensionalTrail trail, Waythread.Mode mode, int returnStartPoi
     static ListTag compounds(CompoundTag tag, String name, int limit) throws IOException {
         require(tag.get(name) instanceof ListTag, "Missing route list");
         ListTag list = (ListTag) tag.get(name);
-        require(list.size() <= limit && (list.isEmpty() || list.getElementType() == Tag.TAG_COMPOUND),
+        require(list.size() <= limit && list.stream().allMatch(CompoundTag.class::isInstance),
                 "Invalid route list");
         return list;
     }
